@@ -58,11 +58,25 @@ On Home Assistant, `output_dir` in `apps.yaml` controls the output location inst
 - **AppDaemon add-on** installed via Settings → Add-ons → Add-on Store → search "AppDaemon"
 - **refreshable-picture-card** installed via HACS → Frontend
 
-> **Troubleshooting:** If AppDaemon doesn't pick up the app after installing via HACS, check
-> that `app_dir` in your `appdaemon.yaml` points to `/homeassistant/appdaemon/apps`. On a fresh
-> AppDaemon + HACS install this should already be correct.
+### Step 1 — Point AppDaemon at the HACS app directory (one-time)
 
-### Step 1 — Install Python dependencies
+By default AppDaemon stores apps in its own isolated config volume, separate from where HACS installs them. This one-time change aligns them. You only do this once, regardless of how many HACS AppDaemon apps you install.
+
+From the Home Assistant CLI (e.g. the Proxmox console), type `login` to get a root bash shell:
+
+```bash
+vi /mnt/data/supervisor/addon_configs/a0d7b954_appdaemon/appdaemon.yaml
+```
+
+Find the `app_dir` line and change it to:
+
+```yaml
+app_dir: /homeassistant/appdaemon/apps
+```
+
+Save and exit. After this change, AppDaemon will look in the same directory that HACS uses, and you can manage `apps.yaml` via the File Editor.
+
+### Step 3 — Install Python dependencies
 
 Go to **Settings → Add-ons → AppDaemon → Configuration** and add:
 
@@ -73,7 +87,7 @@ python_packages:
   - Pillow
 ```
 
-### Step 2 — Install this app via HACS
+### Step 4 — Install this app via HACS
 
 1. In HACS, click the three-dot menu (top right) → **Custom repositories**
 2. Paste in this repo's GitHub URL, set category to **AppDaemon**, click **Add**
@@ -81,7 +95,7 @@ python_packages:
 
 HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
 
-### Step 3 — Add your credentials as secrets
+### Step 5 — Add your credentials as secrets
 
 In `/homeassistant/secrets.yaml` (via File Editor), add:
 
@@ -91,7 +105,7 @@ unifi_protect_username: localadmin
 unifi_protect_password: your_password_here
 ```
 
-### Step 4 — Configure the app
+### Step 6 — Configure the app
 
 Create (or open) `/homeassistant/appdaemon/apps/apps.yaml` in the File Editor and paste in the
 `recent_detections:` block from this repo's [apps.yaml](apps.yaml). All credentials are already
@@ -100,11 +114,11 @@ referenced via `!secret` — no values to edit directly.
 > If `apps.yaml` already exists with other apps in it, **merge** the `recent_detections:` block in
 > rather than replacing the whole file.
 
-### Step 5 — Restart AppDaemon
+### Step 7 — Restart AppDaemon
 
 Settings → Add-ons → AppDaemon → Restart
 
-### Step 6 — Verify
+### Step 8 — Verify
 
 In Settings → Add-ons → AppDaemon → Log, you should see:
 
@@ -117,7 +131,7 @@ Mosaic saved -> /homeassistant/www/unifi_events/recent.jpg
 `/homeassistant/www/` is served by Home Assistant at `/local/` — the mosaic will be available at
 `/local/unifi_events/recent.jpg`.
 
-### Step 7 — Add the dashboard card
+### Step 9 — Add the dashboard card
 
 In your dashboard, add a Manual card:
 

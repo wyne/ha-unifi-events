@@ -149,11 +149,12 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                 img.resize((int(img.width * target_h / img.height), target_h))
                 for img in images
             ]
-            mosaic = Image.new("RGB", (sum(img.width for img in resized), target_h))
-            x = 0
-            for img in resized:
+            panel_w  = resized[0].width
+            n_panels = int(limit) if limit is not None else len(resized)
+            mosaic   = Image.new("RGB", (panel_w * n_panels, target_h))
+            for i, img in enumerate(resized):
+                x = i * panel_w + (panel_w - img.width) // 2
                 mosaic.paste(img, (x, 0))
-                x += img.width
             mosaic.save(mosaic_path, quality=85)
             log(f"Mosaic saved -> {mosaic_path} ({mosaic.width}x{mosaic.height})")
 
