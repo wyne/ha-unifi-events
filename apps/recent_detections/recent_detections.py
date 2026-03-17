@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import aiofiles
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from uiprotect import ProtectApiClient
 from uiprotect.data.types import SmartDetectObjectType, EventType
 
@@ -27,6 +27,45 @@ TYPE_MAP = {
 }
 
 ALL_WATCH_TYPES = set(TYPE_MAP.values())
+
+
+def _label_from_path(path: Path) -> str:
+    """Parse filename into a fuzzy relative time string."""
+    parts = path.stem.split("_")
+    dt = datetime.strptime(f"{parts[0]}{parts[1]}", "%Y%m%d%H%M%S")
+    seconds = int((datetime.now() - dt).total_seconds())
+    minutes = seconds // 60
+    hours   = minutes // 60
+    days    = seconds // 86400
+    if seconds < 60:
+        return "just now"
+    elif minutes < 60:
+        return f"{minutes} min ago"
+    elif hours < 24:
+        return f"{hours} hr ago"
+    elif days == 1:
+        return "yesterday"
+    elif days < 7:
+        return f"{days} days ago"
+    else:
+        return f"{days // 7} wk ago"
+
+
+def _add_overlay(img: Image.Image, label: str) -> Image.Image:
+    img = img.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    try:
+        font = ImageFont.load_default(size=56)
+    except TypeError:
+        font = ImageFont.load_default()
+    margin = 8
+    bbox = draw.textbbox((0, 0), label, font=font)
+    text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x, y = margin, img.height - text_h - margin * 2
+    draw.rectangle([x - 6, y - 4, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 200))
+    draw.text((x, y), label, font=font, fill=(255, 255, 255, 255))
+    return Image.alpha_composite(img, overlay).convert("RGB")
 
 
 # ── AppDaemon app ──────────────────────────────────────────────────────────────
@@ -149,10 +188,11 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                 img.resize((int(img.width * target_h / img.height), target_h))
                 for img in images
             ]
-            panel_w  = resized[0].width
-            n_panels = int(limit) if limit is not None else len(resized)
+            labeled  = [_add_overlay(img, _label_from_path(p)) for img, p in zip(resized, saved_paths)]
+            panel_w  = labeled[0].width
+            n_panels = int(limit) if limit is not None else len(labeled)
             mosaic   = Image.new("RGB", (panel_w * n_panels, target_h))
-            for i, img in enumerate(resized):
+            for i, img in enumerate(labeled):
                 x = i * panel_w + (panel_w - img.width) // 2
                 mosaic.paste(img, (x, 0))
             mosaic.save(mosaic_path, quality=85)
