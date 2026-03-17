@@ -1,0 +1,30 @@
+# Sample configuration — HACS does NOT deploy this file.
+# After installing via HACS, create /homeassistant/appdaemon/apps/apps.yaml in the
+# File Editor and paste this block in (alongside any other apps you have configured).
+
+recent_detections:
+  module: recent_detections
+  class: RecentDetections
+
+  # UniFi Protect connection
+  host: !secret unifi_protect_host
+  port: 443
+  username: !secret unifi_protect_username
+  password: !secret unifi_protect_password
+  verify_ssl: false
+
+  # What to fetch
+  hours: 2          # how far back to look each run
+  limit: 5          # keep only the N most recent detections
+  # types:          # uncomment to restrict; default is all four
+  #   - person
+  #   - animal
+  #   - vehicle
+  #   - package
+
+  # Schedule
+  interval: 300     # seconds between runs (300 = every 5 minutes)
+
+  # Output
+  output_dir: /homeassistant/www/unifi_events
+  mosaic_filename: recent.jpg

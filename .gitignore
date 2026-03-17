@@ -1,0 +1,6 @@
+local_config.py
+output/
+venv/
+__pycache__/
+*.pyc
+.claude
