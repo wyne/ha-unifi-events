@@ -38,17 +38,15 @@ def _label_from_path(path: Path) -> str:
     hours   = minutes // 60
     days    = seconds // 86400
     if seconds < 60:
-        return "just now"
+        return "now"
     elif minutes < 60:
-        return f"{minutes} min ago"
+        return f"{minutes}m"
     elif hours < 24:
-        return f"{hours} hr ago"
-    elif days == 1:
-        return "yesterday"
+        return f"{hours}h"
     elif days < 7:
-        return f"{days} days ago"
+        return f"{days}d"
     else:
-        return f"{days // 7} wk ago"
+        return f"{days // 7}w"
 
 
 def _add_overlay(img: Image.Image, label: str) -> Image.Image:
@@ -56,14 +54,14 @@ def _add_overlay(img: Image.Image, label: str) -> Image.Image:
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     try:
-        font = ImageFont.load_default(size=56)
+        font = ImageFont.load_default(size=40)
     except TypeError:
         font = ImageFont.load_default()
-    margin = 8
+    margin = 10
     bbox = draw.textbbox((0, 0), label, font=font)
     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x, y = margin, img.height - text_h - margin * 2
-    draw.rectangle([x - 6, y - 4, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 200))
+    draw.rectangle([x - margin, y, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 160))
     draw.text((x, y), label, font=font, fill=(255, 255, 255, 255))
     return Image.alpha_composite(img, overlay).convert("RGB")
 
