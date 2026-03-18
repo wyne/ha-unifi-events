@@ -180,7 +180,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
 
             log(f"  Fetching: {primary} on '{camera_name}' at {event_ts} (score={event.score})")
             try:
-                thumb = await client.get_event_thumbnail(event.id)
+                thumb = await client.api_request_raw(f"thumbnails/{event.thumbnail_id}", raise_exception=False)
                 if thumb:
                     async with aiofiles.open(out_path, "wb") as f:
                         await f.write(thumb)
