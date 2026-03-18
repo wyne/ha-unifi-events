@@ -95,10 +95,20 @@ try:
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            await self.fetch_detections({})
+            trigger_sensors = self.args.get("trigger_sensors", [])
+            for sensor in trigger_sensors:
+                self.listen_state(self.fetch_detections, sensor, new="on")
+
+            await self.fetch_detections(trigger="startup")
             self.run_every(self.fetch_detections, f"now+{self.interval}", self.interval)
 
-        async def fetch_detections(self, kwargs):
+        async def fetch_detections(self, entity=None, attribute=None, old=None, new=None, trigger=None, **kwargs):
+            if entity:
+                self.log(f"Triggered by state change: {entity}")
+            elif trigger == "startup":
+                self.log("Triggered by startup")
+            else:
+                self.log("Triggered by timer")
             await _fetch(
                 host=self.host,
                 port=self.port,

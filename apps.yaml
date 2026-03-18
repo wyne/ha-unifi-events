@@ -24,6 +24,9 @@ recent_detections:
 
   # Schedule
   interval: 300     # seconds between runs (300 = every 5 minutes)
+  # trigger_sensors:              # optional: also trigger on HA sensor state changes
+  #   - binary_sensor.cam_person_detected
+  #   - binary_sensor.cam_animal_detected
 
   # Output
   output_dir: /homeassistant/www/unifi_events
