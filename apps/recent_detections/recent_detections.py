@@ -40,13 +40,13 @@ def _label_from_path(path: Path) -> str:
     if seconds < 60:
         return "now"
     elif minutes < 60:
-        return f"{minutes}m"
+        return f"{minutes} m"
     elif hours < 24:
-        return f"{hours}h"
+        return f"{hours} h"
     elif days < 7:
-        return f"{days}d"
+        return f"{days} d"
     else:
-        return f"{days // 7}w"
+        return f"{days // 7} w"
 
 
 def _add_overlay(img: Image.Image, label: str) -> Image.Image:
@@ -54,14 +54,14 @@ def _add_overlay(img: Image.Image, label: str) -> Image.Image:
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     try:
-        font = ImageFont.load_default(size=40)
+        font = ImageFont.load_default(size=50)
     except TypeError:
         font = ImageFont.load_default()
     margin = 10
     bbox = draw.textbbox((0, 0), label, font=font)
     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x, y = margin, img.height - text_h - margin * 2
-    draw.rectangle([x - margin, y, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 160))
+    draw.rectangle([x - margin, y + margin/2, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 160))
     draw.text((x, y), label, font=font, fill=(255, 255, 255, 255))
     return Image.alpha_composite(img, overlay).convert("RGB")
 
@@ -196,12 +196,14 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                 img.resize((int(img.width * target_h / img.height), target_h))
                 for img in images
             ]
-            labeled  = [_add_overlay(img, _label_from_path(p)) for img, p in zip(resized, saved_paths)]
+            labeled  = [_add_overlay(img, _label_from_path(p)) for img, p in zip(resized, saved_paths)][::-1]
             panel_w  = labeled[0].width
             n_panels = int(limit) if limit is not None else len(labeled)
-            mosaic   = Image.new("RGB", (panel_w * n_panels, target_h))
+            gap      = 8
+            total_w  = panel_w * n_panels + gap * (n_panels - 1)
+            mosaic   = Image.new("RGB", (total_w, target_h))
             for i, img in enumerate(labeled):
-                x = i * panel_w + (panel_w - img.width) // 2
+                x = i * (panel_w + gap) + (panel_w - img.width) // 2
                 mosaic.paste(img, (x, 0))
             mosaic.save(mosaic_path, quality=85)
             log(f"Mosaic saved -> {mosaic_path} ({mosaic.width}x{mosaic.height})")
