@@ -15,7 +15,7 @@ recent_detections:
 
   # What to fetch
   hours: 2          # how far back to look each run
-  limit: 5          # keep only the N most recent detections
+  count: 6          # thumbnails to include in manifest (should be >= card's lightbox_count)
   # types:          # uncomment to restrict; default is all four
   #   - person
   #   - animal
@@ -24,10 +24,11 @@ recent_detections:
 
   # Schedule
   interval: 300     # seconds between runs (300 = every 5 minutes)
+  trigger_delay: 10 # seconds after sensor fires before fetching (gives detection time to end)
   # trigger_sensors:              # optional: also trigger on HA sensor state changes
   #   - binary_sensor.cam_person_detected
   #   - binary_sensor.cam_animal_detected
 
   # Output
   output_dir: /homeassistant/www/unifi_events
-  mosaic_filename: recent.jpg
+  web_root: /local/unifi_events

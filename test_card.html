@@ -68,9 +68,11 @@
     </p>
 
     <div class="controls">
-      <button onclick="document.getElementById('card')._fetchAndUpdate()">
-        Force refresh
-      </button>
+      <button onclick="document.getElementById('card')._fetchAndUpdate()">Force refresh</button>
+      <button onclick="simulateTrigger('person')">Trigger: person</button>
+      <button onclick="simulateTrigger('vehicle')">Trigger: vehicle</button>
+      <button onclick="simulateTrigger('animal')">Trigger: animal</button>
+      <button onclick="simulateTrigger('package')">Trigger: package</button>
     </div>
 
     <div class="scenario">
@@ -80,18 +82,31 @@
 
     <script src="apps/recent_detections/refreshable-tap-picture-card.js"></script>
     <script>
-      // Rewrite /local/unifi_events/ → output/ so the browser can find the files locally
       const _realFetch = window.fetch.bind(window);
+      let _mockData = null;
+
+      // On the first fetch, load from disk and rewrite /local/unifi_events/ → output/.
+      // After that, serve from the in-memory _mockData so simulateTrigger can mutate it.
       window.fetch = function (input, init) {
         if (typeof input === "string" && input.includes("recent.json")) {
+          if (_mockData) {
+            return Promise.resolve(
+              new Response(JSON.stringify(_mockData), {
+                headers: { "Content-Type": "application/json" },
+              }),
+            );
+          }
           return _realFetch(input, init)
             .then((r) => r.json())
             .then((data) => {
               data.thumbnails = data.thumbnails.map((t) => ({
                 ...t,
-                url: t.url.replace("/local/unifi_events/", "output/"),
+                url: t.url
+                  ? t.url.replace("/local/unifi_events/", "output/")
+                  : null,
               }));
-              return new Response(JSON.stringify(data), {
+              _mockData = data;
+              return new Response(JSON.stringify(_mockData), {
                 headers: { "Content-Type": "application/json" },
               });
             });
@@ -102,10 +117,35 @@
       document.getElementById("card").setConfig({
         url: "output/recent.json",
         count: 3,
-        lightbox_count: 6,
+        lightbox_count: 9,
         cols: 3,
         refresh_interval: 10,
       });
+
+      // Simulate a sensor trigger: null out the first thumbnail URL (placeholder state),
+      // then restore it after 5 seconds (thumbnail ready state).
+      function simulateTrigger(type) {
+        if (!_mockData) return;
+        // Prepend a pending placeholder of the given type
+        const pending = { url: null, ts: new Date().toISOString(), type, camera: 'unknown', pending: true };
+        _mockData.thumbnails.unshift(pending);
+        document.getElementById("card")._fetchAndUpdate();
+        // After 5 seconds, fill in the real URL from the next available thumbnail
+        setTimeout(() => {
+          const idx = _mockData.thumbnails.indexOf(pending);
+          if (idx !== -1) {
+            // Borrow a URL from a later entry to simulate thumbnail arriving
+            const donor = _mockData.thumbnails.find((t, i) => i > idx && t.url);
+            _mockData.thumbnails[idx] = {
+              ...pending,
+              url: donor ? donor.url : null,
+              pending: false,
+            };
+            delete _mockData.thumbnails[idx].pending;
+          }
+          document.getElementById("card")._fetchAndUpdate();
+        }, 5000);
+      }
     </script>
   </body>
 </html>

@@ -56,20 +56,50 @@ try:
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
+            self.trigger_delay = int(self.args.get("trigger_delay", 10))
+
             trigger_sensors = self.args.get("trigger_sensors", [])
             for sensor in trigger_sensors:
-                self.listen_state(self.fetch_detections, sensor, new="on")
+                self.listen_state(self.on_sensor_trigger, sensor, new="on")
 
-            await self.fetch_detections(trigger="startup")
-            self.run_every(self.fetch_detections, f"now+{self.interval}", self.interval)
+            await self._do_fetch(trigger="startup")
+            self.run_every(self._do_fetch, f"now+{self.interval}", self.interval)
 
-        async def fetch_detections(self, entity=None, attribute=None, old=None, new=None, trigger=None, **kwargs):
-            if entity:
-                self.log(f"Triggered by state change: {entity}")
-            elif trigger == "startup":
+        def on_sensor_trigger(self, entity, attribute, old, new, kwargs):
+            """Sync callback required by AppDaemon for listen_state."""
+            detection_type = next(
+                (t for t in ["person", "vehicle", "animal", "package"] if t in entity),
+                "person",
+            )
+            self.log(f"Triggered by state change: {entity} — injecting placeholder, fetching in {self.trigger_delay}s")
+            self._inject_placeholder(detection_type)
+            self.run_in(self._do_fetch, self.trigger_delay)
+
+        def _inject_placeholder(self, detection_type):
+            manifest_path = self.output_dir / "recent.json"
+            try:
+                manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"thumbnails": []}
+            except Exception:
+                manifest = {"thumbnails": []}
+            manifest["thumbnails"].insert(0, {
+                "url": None,
+                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                "camera": "unknown",
+                "type": detection_type,
+                "pending": True,
+            })
+            if self.count:
+                manifest["thumbnails"] = manifest["thumbnails"][:int(self.count)]
+            manifest["updated"] = datetime.now(tz=timezone.utc).isoformat()
+            manifest_path.write_text(json.dumps(manifest))
+
+        async def _do_fetch(self, kwargs=None, trigger=None):
+            if trigger == "startup":
                 self.log("Triggered by startup")
-            else:
+            elif kwargs:
                 self.log("Triggered by timer")
+            else:
+                self.log("Fetching after trigger delay")
             await _fetch(
                 host=self.host,
                 port=self.port,

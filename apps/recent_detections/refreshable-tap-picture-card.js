@@ -13,6 +13,16 @@ class RefreshableTapPictureCard extends HTMLElement {
     this._build();
   }
 
+  _typeIcon(type) {
+    const icons = {
+      person:  '<svg viewBox="0 0 24 24" fill="#555"><circle cx="12" cy="7" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
+      vehicle: '<svg viewBox="0 0 24 24" fill="#555"><rect x="2" y="10" width="20" height="8" rx="2"/><path d="M5 10l3-5h8l3 5"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+      animal:  '<svg viewBox="0 0 24 24" fill="#555"><ellipse cx="12" cy="13" rx="5" ry="4"/><circle cx="7" cy="8" r="2"/><circle cx="17" cy="8" r="2"/><circle cx="5" cy="13" r="1.5"/><circle cx="19" cy="13" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>',
+      package: '<svg viewBox="0 0 24 24" fill="#555"><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 8l3-5h12l3 5"/><line x1="12" y1="8" x2="12" y2="21" stroke="#333" stroke-width="1.5"/></svg>',
+    };
+    return icons[type] || '<svg viewBox="0 0 24 24" fill="#555"><circle cx="12" cy="12" r="9"/></svg>';
+  }
+
   _fuzzyAge(isoTs) {
     const seconds = Math.floor((Date.now() - new Date(isoTs)) / 1000);
     const minutes = Math.floor(seconds / 60);
@@ -63,6 +73,20 @@ class RefreshableTapPictureCard extends HTMLElement {
           width: 100%;
           height: 100%;
           object-fit: cover;
+        }
+
+        .placeholder {
+          display: none;
+          width: 100%;
+          height: 100%;
+          align-items: center;
+          justify-content: center;
+          background: #1a1a1a;
+        }
+
+        .placeholder svg {
+          width: 48px;
+          height: 48px;
         }
 
         .cell .label {
@@ -147,31 +171,37 @@ class RefreshableTapPictureCard extends HTMLElement {
     // Pre-build empty cells for the main grid
     this._cells = [];
     for (let i = 0; i < count; i++) {
-      const cell  = document.createElement('div');
-      cell.className = 'cell';
-      const img   = document.createElement('img');
-      img.decoding = 'async';
-      const label = document.createElement('span');
-      label.className = 'label';
+      const cell        = document.createElement('div');
+      cell.className    = 'cell';
+      const img         = document.createElement('img');
+      img.decoding      = 'async';
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      const label       = document.createElement('span');
+      label.className   = 'label';
       cell.appendChild(img);
+      cell.appendChild(placeholder);
       cell.appendChild(label);
       grid.appendChild(cell);
-      this._cells.push({ img, label });
+      this._cells.push({ img, placeholder, label });
     }
 
     // Pre-build empty cells for the lightbox grid
     this._lightboxCells = [];
     for (let i = 0; i < lightboxCount; i++) {
-      const cell  = document.createElement('div');
-      cell.className = 'cell';
-      const img   = document.createElement('img');
-      img.decoding = 'async';
-      const label = document.createElement('span');
-      label.className = 'label';
+      const cell        = document.createElement('div');
+      cell.className    = 'cell';
+      const img         = document.createElement('img');
+      img.decoding      = 'async';
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      const label       = document.createElement('span');
+      label.className   = 'label';
       cell.appendChild(img);
+      cell.appendChild(placeholder);
       cell.appendChild(label);
       lightboxGrid.appendChild(cell);
-      this._lightboxCells.push({ img, label });
+      this._lightboxCells.push({ img, placeholder, label });
     }
 
     // Lightbox open/close
@@ -197,8 +227,8 @@ class RefreshableTapPictureCard extends HTMLElement {
       .then(r => r.json())
       .then(data => {
         const thumbs = data.thumbnails || [];
-        this._patch(this._cells,        thumbs.slice(0, count));
-        this._patch(this._lightboxCells, thumbs.slice(0, lightboxCount));
+        this._patch(this._cells,         thumbs.slice(0, count).reverse());
+        this._patch(this._lightboxCells, thumbs.slice(0, lightboxCount).reverse());
       })
       .catch(() => { /* ignore fetch errors — stale display is fine */ });
   }
@@ -211,9 +241,18 @@ class RefreshableTapPictureCard extends HTMLElement {
         cell.label.textContent = '';
         return;
       }
-      // Only update src if URL changed — avoids unnecessary decode
-      if (cell.img.getAttribute('src') !== thumb.url) {
-        cell.img.setAttribute('src', thumb.url);
+      if (!thumb.url) {
+        cell.img.removeAttribute('src');
+        cell.img.style.display = 'none';
+        cell.placeholder.innerHTML = this._typeIcon(thumb.type);
+        cell.placeholder.style.display = 'flex';
+      } else {
+        cell.placeholder.style.display = 'none';
+        cell.img.style.display = 'block';
+        // Only update src if URL changed — avoids unnecessary decode
+        if (cell.img.getAttribute('src') !== thumb.url) {
+          cell.img.setAttribute('src', thumb.url);
+        }
       }
       cell.label.textContent = this._fuzzyAge(thumb.ts);
       cell.label.dataset.ts  = thumb.ts;
