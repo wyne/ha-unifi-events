@@ -1,8 +1,8 @@
 """
 recent_detections.py
 
-Fetches the most recent UniFi Protect AI detection events and stitches their
-thumbnails into a single wide mosaic image.
+Fetches the most recent UniFi Protect AI detection events and saves their
+thumbnails to disk, then writes a JSON manifest for the custom HA card to render.
 
 Can run in two modes:
   - AppDaemon app (scheduled, runs inside Home Assistant)
@@ -11,11 +11,11 @@ Can run in two modes:
 
 import asyncio
 import argparse
+import json
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import aiofiles
-from PIL import Image, ImageDraw, ImageFont
 from uiprotect import ProtectApiClient
 from uiprotect.data.types import SmartDetectObjectType, EventType
 
@@ -27,43 +27,6 @@ TYPE_MAP = {
 }
 
 ALL_WATCH_TYPES = set(TYPE_MAP.values())
-
-
-def _label_from_path(path: Path) -> str:
-    """Parse filename into a fuzzy relative time string."""
-    parts = path.stem.split("_")
-    dt = datetime.strptime(f"{parts[0]}{parts[1]}", "%Y%m%d%H%M%S")
-    seconds = int((datetime.now() - dt).total_seconds())
-    minutes = seconds // 60
-    hours   = minutes // 60
-    days    = seconds // 86400
-    if seconds < 60:
-        return "now"
-    elif minutes < 60:
-        return f"{minutes} m"
-    elif hours < 24:
-        return f"{hours} h"
-    elif days < 7:
-        return f"{days} d"
-    else:
-        return f"{days // 7} w"
-
-
-def _add_overlay(img: Image.Image, label: str) -> Image.Image:
-    img = img.convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    try:
-        font = ImageFont.load_default(size=50)
-    except TypeError:
-        font = ImageFont.load_default()
-    margin = 10
-    bbox = draw.textbbox((0, 0), label, font=font)
-    text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    x, y = margin, img.height - text_h - margin * 2
-    draw.rectangle([x - margin, y + margin/2, x + text_w + 12, y + text_h + 20], fill=(0, 0, 0, 160))
-    draw.text((x, y), label, font=font, fill=(255, 255, 255, 255))
-    return Image.alpha_composite(img, overlay).convert("RGB")
 
 
 # ── AppDaemon app ──────────────────────────────────────────────────────────────
@@ -80,10 +43,10 @@ try:
             self.password    = self.args["password"]
             self.verify_ssl  = bool(self.args.get("verify_ssl", False))
             self.hours       = float(self.args.get("hours", 2.0))
-            self.limit       = self.args.get("limit")
+            self.count       = self.args.get("count")
             self.interval    = int(self.args.get("interval", 300))
             self.output_dir  = Path(self.args.get("output_dir", "/homeassistant/www/unifi_events"))
-            self.mosaic_path = self.output_dir / self.args.get("mosaic_filename", "recent.jpg")
+            self.web_root    = self.args.get("web_root", "/local/unifi_events")
 
             raw_types = self.args.get("types")
             self.watch_types = (
@@ -115,9 +78,9 @@ try:
                 verify_ssl=self.verify_ssl,
                 hours=self.hours,
                 watch_types=self.watch_types,
-                limit=self.limit,
+                count=self.count,
                 output_dir=self.output_dir,
-                mosaic_path=self.mosaic_path,
+                web_root=self.web_root,
                 log=self.log,
             )
 
@@ -128,7 +91,7 @@ except ImportError:
 # ── Shared fetch logic ─────────────────────────────────────────────────────────
 
 async def _fetch(*, host, port, username, password, verify_ssl,
-                 hours, watch_types, limit, output_dir, mosaic_path, log):
+                 hours, watch_types, count, output_dir, web_root, log):
     now   = datetime.now(tz=timezone.utc)
     since = now - timedelta(hours=hours)
 
@@ -154,8 +117,8 @@ async def _fetch(*, host, port, username, password, verify_ssl,
         ]
 
         detections.sort(key=lambda e: e.start, reverse=True)
-        if limit is not None:
-            detections = detections[:int(limit)]
+        if count is not None:
+            detections = detections[:int(count)]
 
         log(f"Found {len(detections)} matching detection(s) (out of {len(events)} total events)")
 
@@ -190,23 +153,24 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                 log(f"    -> Error: {e}")
 
         if saved_paths:
-            images   = [Image.open(p) for p in saved_paths]
-            target_h = min(img.height for img in images)
-            resized  = [
-                img.resize((int(img.width * target_h / img.height), target_h))
-                for img in images
-            ]
-            labeled  = [_add_overlay(img, _label_from_path(p)) for img, p in zip(resized, saved_paths)][::-1]
-            panel_w  = labeled[0].width
-            n_panels = int(limit) if limit is not None else len(labeled)
-            gap      = 8
-            total_w  = panel_w * n_panels + gap * (n_panels - 1)
-            mosaic   = Image.new("RGB", (total_w, target_h))
-            for i, img in enumerate(labeled):
-                x = i * (panel_w + gap) + (panel_w - img.width) // 2
-                mosaic.paste(img, (x, 0))
-            mosaic.save(mosaic_path, quality=85)
-            log(f"Mosaic saved -> {mosaic_path} ({mosaic.width}x{mosaic.height})")
+            manifest = {
+                "updated": now.isoformat(),
+                "thumbnails": [
+                    {
+                        "url": f"{web_root}/{p.name}",
+                        "ts":  datetime.strptime(
+                                   f"{p.stem.split('_')[0]}{p.stem.split('_')[1]}",
+                                   "%Y%m%d%H%M%S"
+                               ).isoformat(),
+                        "camera": p.stem.split("_", 2)[2].rsplit("_", 1)[0],
+                        "type":   p.stem.rsplit("_", 1)[-1],
+                    }
+                    for p in saved_paths  # newest-first (already sorted)
+                ],
+            }
+            manifest_path = output_dir / "recent.json"
+            manifest_path.write_text(json.dumps(manifest))
+            log(f"Manifest saved -> {manifest_path} ({len(manifest['thumbnails'])} thumbnails)")
 
     except Exception as e:
         log(f"fetch failed: {e}")
@@ -229,8 +193,12 @@ if __name__ == "__main__":
     _log = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hours",  type=float, default=2.0,  help="Hours back to look (default: 2)")
-    parser.add_argument("--limit",  type=int,   default=None, help="Max number of events to fetch")
+    parser.add_argument("--hours",     type=float, default=2.0,  help="Hours back to look (default: 2)")
+    parser.add_argument("--count",     type=int,   default=None, metavar="N",
+                        help="Max thumbnails to include in the manifest. "
+                             "Should be >= the card's lightbox_count (default: all)")
+    parser.add_argument("--web-root",  default="/local/unifi_events",
+                        help="URL prefix for thumbnail paths in the manifest (default: /local/unifi_events)")
     parser.add_argument("--types",  nargs="+",  default=None,
                         choices=["person", "animal", "vehicle", "package"],
                         help="Detection types to fetch (default: all)")
@@ -248,8 +216,8 @@ if __name__ == "__main__":
         verify_ssl=cfg.VERIFY_SSL,
         hours=args.hours,
         watch_types=watch,
-        limit=args.limit,
+        count=args.count,
         output_dir=output_dir,
-        mosaic_path=output_dir / "recent.jpg",
+        web_root=args.web_root,
         log=lambda msg: _log.info(msg),
     ))

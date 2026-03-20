@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Card Test</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #111827;
+        font-family: sans-serif;
+        color: #fff;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .scenario {
+        margin-bottom: 32px;
+        max-width: 600px;
+      }
+      .controls {
+        margin-bottom: 16px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #374151;
+        color: #fff;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button:hover {
+        background: #4b5563;
+      }
+      code {
+        background: #1f2937;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #93c5fd;
+      }
+      .note {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 24px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="note">
+      1. Generate data:
+      <code
+        >cd apps/recent_detections &amp;&amp; python3 recent_detections.py
+        --count 6</code
+      ><br />
+      2. Serve from repo root: <code>python3 -m http.server 8080</code><br />
+      3. Open <code>http://localhost:8080/test_card.html</code>
+    </p>
+
+    <div class="controls">
+      <button onclick="document.getElementById('card')._fetchAndUpdate()">
+        Force refresh
+      </button>
+    </div>
+
+    <div class="scenario">
+      <h2>3-up grid / 6-up lightbox (tap card)</h2>
+      <refreshable-tap-picture-card id="card"></refreshable-tap-picture-card>
+    </div>
+
+    <script src="apps/recent_detections/refreshable-tap-picture-card.js"></script>
+    <script>
+      // Rewrite /local/unifi_events/ → output/ so the browser can find the files locally
+      const _realFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        if (typeof input === "string" && input.includes("recent.json")) {
+          return _realFetch(input, init)
+            .then((r) => r.json())
+            .then((data) => {
+              data.thumbnails = data.thumbnails.map((t) => ({
+                ...t,
+                url: t.url.replace("/local/unifi_events/", "output/"),
+              }));
+              return new Response(JSON.stringify(data), {
+                headers: { "Content-Type": "application/json" },
+              });
+            });
+        }
+        return _realFetch(input, init);
+      };
+
+      document.getElementById("card").setConfig({
+        url: "output/recent.json",
+        count: 3,
+        lightbox_count: 6,
+        cols: 3,
+        refresh_interval: 10,
+      });
+    </script>
+  </body>
+</html>
