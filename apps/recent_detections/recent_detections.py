@@ -56,10 +56,10 @@ try:
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            self.trigger_delay            = int(self.args.get("trigger_delay", 120)) # 2 minutes
-            self.thumbnail_retry_interval = int(self.args.get("thumbnail_retry_interval", 5)) # 5 seconds
-            self.thumbnail_retry_max      = int(self.args.get("thumbnail_retry_max", 12))
-            self._retry_count             = 0
+            self.trigger_delay            = int(self.args.get("trigger_delay", 120))
+            self.trigger_poll_interval    = int(self.args.get("trigger_poll_interval", 5))
+            self.trigger_poll_count       = int(self.args.get("trigger_poll_count", 12))
+            self._trigger_polls_remaining = 0
 
             trigger_sensors = self.args.get("trigger_sensors", [])
             for sensor in trigger_sensors:
@@ -70,7 +70,7 @@ try:
 
         def on_sensor_trigger(self, entity, attribute, old, new, kwargs):
             """Sync callback required by AppDaemon for listen_state."""
-            self._retry_count = 0
+            self._trigger_polls_remaining = self.trigger_poll_count
             detection_type = next(
                 (t for t in ["person", "vehicle", "animal", "package"] if t in entity),
                 "person",
@@ -87,12 +87,12 @@ try:
             self.run_in(self._do_fetch, self.trigger_delay)
 
         def _inject_placeholder(self, detection_type):
-            manifest_path = self.output_dir / "recent.json"
+            feed_path = self.output_dir / "recent.json"
             try:
-                manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"thumbnails": []}
+                event_feed = json.loads(feed_path.read_text()) if feed_path.exists() else {"thumbnails": []}
             except Exception:
-                manifest = {"thumbnails": []}
-            manifest["thumbnails"].insert(0, {
+                event_feed = {"thumbnails": []}
+            event_feed["thumbnails"].insert(0, {
                 "url": None,
                 "ts": datetime.now(tz=timezone.utc).isoformat(),
                 "camera": "unknown",
@@ -100,9 +100,9 @@ try:
                 "pending": True,
             })
             if self.count:
-                manifest["thumbnails"] = manifest["thumbnails"][:int(self.count)]
-            manifest["updated"] = datetime.now(tz=timezone.utc).isoformat()
-            manifest_path.write_text(json.dumps(manifest))
+                event_feed["thumbnails"] = event_feed["thumbnails"][:int(self.count)]
+            event_feed["updated"] = datetime.now(tz=timezone.utc).isoformat()
+            feed_path.write_text(json.dumps(event_feed))
 
         async def _do_fetch(self, kwargs=None, trigger=None):
             if trigger == "startup":
@@ -111,7 +111,7 @@ try:
                 self.log("Triggered by timer")
             else:
                 self.log("Fetching after trigger delay")
-            has_nulls = await _fetch(
+            await _fetch(
                 host=self.host,
                 port=self.port,
                 username=self.username,
@@ -128,12 +128,10 @@ try:
                 "sensor.unifi_detections_updated",
                 state=datetime.now(tz=timezone.utc).isoformat(),
             )
-            if has_nulls and self._retry_count < self.thumbnail_retry_max:
-                self._retry_count += 1
-                self.log(f"Null thumbnails present, retry {self._retry_count}/{self.thumbnail_retry_max} in {self.thumbnail_retry_interval}s")
-                self.run_in(self._do_fetch, self.thumbnail_retry_interval)
-            elif not has_nulls:
-                self._retry_count = 0
+            if self._trigger_polls_remaining > 0:
+                self._trigger_polls_remaining -= 1
+                self.log(f"Post-trigger poll, {self._trigger_polls_remaining} remaining")
+                self.run_in(self._do_fetch, self.trigger_poll_interval)
 
 except ImportError:
     pass  # Not running under AppDaemon — CLI mode only
@@ -209,29 +207,16 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                     })
                 else:
                     log(f"    -> No thumbnail available for event {event.id}")
-                    feed_entries.append({
-                        "url":     None,
-                        "ts":      event.start.isoformat(),
-                        "camera":  camera_name,
-                        "type":    primary,
-                        "pending": True,
-                    })
             except Exception as e:
                 log(f"    -> Error: {e}")
-
-        has_nulls = any(e["url"] is None for e in feed_entries)
 
         if feed_entries:
             feed_path = output_dir / "recent.json"
             feed_path.write_text(json.dumps({"updated": now.isoformat(), "thumbnails": feed_entries}))
-            null_count = sum(1 for e in feed_entries if e["url"] is None)
-            log(f"Event feed saved -> {feed_path} ({len(feed_entries)} entries, {null_count} pending)")
-
-        return has_nulls
+            log(f"Event feed saved -> {feed_path} ({len(feed_entries)} entries)")
 
     except Exception as e:
         log(f"fetch failed: {e}")
-        return False
     finally:
         await client.close_session()
 
