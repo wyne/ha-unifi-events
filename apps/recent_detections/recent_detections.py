@@ -57,9 +57,9 @@ try:
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
             self.trigger_delay            = int(self.args.get("trigger_delay", 120))
-            self.trigger_poll_interval    = int(self.args.get("trigger_poll_interval", 5))
-            self.trigger_poll_count       = int(self.args.get("trigger_poll_count", 12))
-            self._trigger_polls_remaining = 0
+            self.trigger_poll_interval    = int(self.args.get("trigger_poll_interval", 5))   # seconds between post-trigger polls
+            self.trigger_poll_count       = int(self.args.get("trigger_poll_count", 12))     # max polls before giving up
+            self._trigger_polls_remaining = 0  # counts down after a sensor trigger; drives fast polling until a new thumbnail is found
 
             trigger_sensors = self.args.get("trigger_sensors", [])
             for sensor in trigger_sensors:
@@ -111,7 +111,7 @@ try:
                 self.log("Triggered by timer")
             else:
                 self.log("Fetching after trigger delay")
-            await _fetch(
+            found_new = await _fetch(
                 host=self.host,
                 port=self.port,
                 username=self.username,
@@ -129,9 +129,13 @@ try:
                 state=datetime.now(tz=timezone.utc).isoformat(),
             )
             if self._trigger_polls_remaining > 0:
-                self._trigger_polls_remaining -= 1
-                self.log(f"Post-trigger poll, {self._trigger_polls_remaining} remaining")
-                self.run_in(self._do_fetch, self.trigger_poll_interval)
+                if found_new:
+                    self.log("Post-trigger poll complete: new thumbnail found")
+                    self._trigger_polls_remaining = 0
+                else:
+                    self._trigger_polls_remaining -= 1
+                    self.log(f"Post-trigger poll, {self._trigger_polls_remaining} remaining")
+                    self.run_in(self._do_fetch, self.trigger_poll_interval)
 
 except ImportError:
     pass  # Not running under AppDaemon — CLI mode only
@@ -172,6 +176,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
         log(f"Found {len(detections)} matching detection(s) (out of {len(events)} total events)")
 
         feed_entries = []
+        found_new    = False  # set to True when a thumbnail is newly downloaded; stops post-trigger polling
         for event in detections:
             types       = [t.value for t in event.smart_detect_types if t in watch_types]
             primary     = types[0]
@@ -201,6 +206,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                         await f.write(thumb)
                     log(f"    -> {out_path} ({len(thumb)/1024:.1f} KB)")
                     feed_entries.append(feed_entry)
+                    found_new = True
                 else:
                     log(f"    -> No thumbnail available for event {event.id}")
             except Exception as e:
@@ -211,8 +217,11 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             feed_path.write_text(json.dumps({"updated": now.isoformat(), "thumbnails": feed_entries}))
             log(f"Event feed saved -> {feed_path} ({len(feed_entries)} entries)")
 
+        return found_new
+
     except Exception as e:
         log(f"fetch failed: {e}")
+        return False
     finally:
         await client.close_session()
 
