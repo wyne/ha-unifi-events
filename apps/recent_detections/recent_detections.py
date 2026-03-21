@@ -111,7 +111,7 @@ try:
                 self.log("Triggered by timer")
             else:
                 self.log("Fetching after trigger delay")
-            new_count, has_nulls = await _fetch(
+            has_nulls = await _fetch(
                 host=self.host,
                 port=self.port,
                 username=self.username,
@@ -124,14 +124,10 @@ try:
                 web_root=self.web_root,
                 log=self.log,
             )
-            if new_count:
-                self._retry_count = 0
-                self.set_state(
-                    "sensor.unifi_detections_updated",
-                    state=datetime.now(tz=timezone.utc).isoformat(),
-                    attributes={"new_count": new_count},
-                )
-                self.log(f"Signalled card: {new_count} new thumbnail(s)")
+            self.set_state(
+                "sensor.unifi_detections_updated",
+                state=datetime.now(tz=timezone.utc).isoformat(),
+            )
             if has_nulls and self._retry_count < self.thumbnail_retry_max:
                 self._retry_count += 1
                 self.log(f"Null thumbnails present, retry {self._retry_count}/{self.thumbnail_retry_max} in {self.thumbnail_retry_interval}s")
@@ -177,8 +173,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
 
         log(f"Found {len(detections)} matching detection(s) (out of {len(events)} total events)")
 
-        new_count       = 0
-        manifest_entries = []
+        feed_entries = []
         for event in detections:
             types       = [t.value for t in event.smart_detect_types if t in watch_types]
             primary     = types[0]
@@ -191,7 +186,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             out_path = output_dir / filename
 
             if out_path.exists():
-                manifest_entries.append({
+                feed_entries.append({
                     "url":    f"{web_root}/{filename}",
                     "ts":     event.start.isoformat(),
                     "camera": camera_name,
@@ -206,16 +201,15 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                     async with aiofiles.open(out_path, "wb") as f:
                         await f.write(thumb)
                     log(f"    -> {out_path} ({len(thumb)/1024:.1f} KB)")
-                    manifest_entries.append({
+                    feed_entries.append({
                         "url":    f"{web_root}/{filename}",
                         "ts":     event.start.isoformat(),
                         "camera": camera_name,
                         "type":   primary,
                     })
-                    new_count += 1
                 else:
-                    log(f"    -> Empty response for event {event.id}")
-                    manifest_entries.append({
+                    log(f"    -> No thumbnail available for event {event.id}")
+                    feed_entries.append({
                         "url":     None,
                         "ts":      event.start.isoformat(),
                         "camera":  camera_name,
@@ -225,20 +219,19 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             except Exception as e:
                 log(f"    -> Error: {e}")
 
-        has_nulls = any(e["url"] is None for e in manifest_entries)
+        has_nulls = any(e["url"] is None for e in feed_entries)
 
-        if manifest_entries:
-            manifest = {"updated": now.isoformat(), "thumbnails": manifest_entries}
-            manifest_path = output_dir / "recent.json"
-            manifest_path.write_text(json.dumps(manifest))
-            null_count = sum(1 for e in manifest_entries if e["url"] is None)
-            log(f"Manifest saved -> {manifest_path} ({len(manifest_entries)} thumbnails, {new_count} new, {null_count} pending)")
+        if feed_entries:
+            feed_path = output_dir / "recent.json"
+            feed_path.write_text(json.dumps({"updated": now.isoformat(), "thumbnails": feed_entries}))
+            null_count = sum(1 for e in feed_entries if e["url"] is None)
+            log(f"Event feed saved -> {feed_path} ({len(feed_entries)} entries, {null_count} pending)")
 
-        return new_count, has_nulls
+        return has_nulls
 
     except Exception as e:
         log(f"fetch failed: {e}")
-        return 0, False
+        return False
     finally:
         await client.close_session()
 
