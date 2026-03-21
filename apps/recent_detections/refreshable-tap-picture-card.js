@@ -1,10 +1,12 @@
+const VERSION = '5';
+
 class RefreshableTapPictureCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
     this._interval = null;
-    this._cells    = [];   // [{img, label}] — built once, patched on each fetch
-    this._urls     = [];   // current img URLs, used to diff on next fetch
+    this._cells = [];   // [{img, label}] — built once, patched on each fetch
+    this._urls = [];   // current img URLs, used to diff on next fetch
   }
 
   setConfig(config) {
@@ -13,11 +15,21 @@ class RefreshableTapPictureCard extends HTMLElement {
     this._build();
   }
 
+  set hass(h) {
+    const entity = this._config?.entity;
+    if (entity) {
+      const prev = this._hass?.states[entity]?.state;
+      const next = h.states[entity]?.state;
+      if (next && next !== prev) this._fetchAndUpdate('state update');
+    }
+    this._hass = h;
+  }
+
   _typeIcon(type) {
     const icons = {
-      person:  '<svg viewBox="0 0 24 24" fill="#555"><circle cx="12" cy="7" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
+      person: '<svg viewBox="0 0 24 24" fill="#555"><circle cx="12" cy="7" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
       vehicle: '<svg viewBox="0 0 24 24" fill="#555"><rect x="2" y="10" width="20" height="8" rx="2"/><path d="M5 10l3-5h8l3 5"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
-      animal:  '<svg viewBox="0 0 24 24" fill="#555"><ellipse cx="12" cy="13" rx="5" ry="4"/><circle cx="7" cy="8" r="2"/><circle cx="17" cy="8" r="2"/><circle cx="5" cy="13" r="1.5"/><circle cx="19" cy="13" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>',
+      animal: '<svg viewBox="0 0 24 24" fill="#555"><ellipse cx="12" cy="13" rx="5" ry="4"/><circle cx="7" cy="8" r="2"/><circle cx="17" cy="8" r="2"/><circle cx="5" cy="13" r="1.5"/><circle cx="19" cy="13" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>',
       package: '<svg viewBox="0 0 24 24" fill="#555"><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 8l3-5h12l3 5"/><line x1="12" y1="8" x2="12" y2="21" stroke="#333" stroke-width="1.5"/></svg>',
     };
     return icons[type] || '<svg viewBox="0 0 24 24" fill="#555"><circle cx="12" cy="12" r="9"/></svg>';
@@ -26,20 +38,20 @@ class RefreshableTapPictureCard extends HTMLElement {
   _fuzzyAge(isoTs) {
     const seconds = Math.floor((Date.now() - new Date(isoTs)) / 1000);
     const minutes = Math.floor(seconds / 60);
-    const hours   = Math.floor(minutes / 60);
-    const days    = Math.floor(seconds / 86400);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(seconds / 86400);
     if (seconds < 60) return 'now';
     if (minutes < 60) return `${minutes} m`;
-    if (hours   < 24) return `${hours} h`;
-    if (days    <  7) return `${days} d`;
+    if (hours < 24) return `${hours} h`;
+    if (days < 7) return `${days} d`;
     return `${Math.floor(days / 7)} w`;
   }
 
   _build() {
-    const cols             = this._config.cols             || 3;
-    const count            = this._config.count            || 3;
-    const lightboxCount    = this._config.lightbox_count   || 6;
-    const refreshInterval  = (this._config.refresh_interval || 30) * 1000;
+    const cols = this._config.cols || 3;
+    const count = this._config.count || 3;
+    const lightboxCount = this._config.lightbox_count || 6;
+    const refreshInterval = (this._config.refresh_interval || 300) * 1000;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -140,10 +152,23 @@ class RefreshableTapPictureCard extends HTMLElement {
           z-index: 10000;
         }
         .close-btn:hover { opacity: 1; }
+
+        .version {
+          position: absolute;
+          top: 4px;
+          left: 6px;
+          color: #ededed;
+          text-shadow: 0px 1px 2px #000000;
+          font-size: 16px;
+          font-weight: bold;
+          font-family: monospace;
+          pointer-events: none;
+        }
       </style>
 
       <div class="card" id="card">
         <div class="grid" id="grid"></div>
+        <span class="version">v${VERSION}</span>
       </div>
 
       <div class="lightbox" id="lightbox">
@@ -154,11 +179,11 @@ class RefreshableTapPictureCard extends HTMLElement {
       </div>
     `;
 
-    const card          = this.shadowRoot.getElementById('card');
-    const lightbox      = this.shadowRoot.getElementById('lightbox');
-    const closeBtn      = this.shadowRoot.getElementById('close-btn');
-    const grid          = this.shadowRoot.getElementById('grid');
-    const lightboxGrid  = this.shadowRoot.getElementById('lightbox-grid');
+    const card = this.shadowRoot.getElementById('card');
+    const lightbox = this.shadowRoot.getElementById('lightbox');
+    const closeBtn = this.shadowRoot.getElementById('close-btn');
+    const grid = this.shadowRoot.getElementById('grid');
+    const lightboxGrid = this.shadowRoot.getElementById('lightbox-grid');
     const lightboxInner = this.shadowRoot.querySelector('.lightbox-inner');
 
     // Fit the lightbox grid within the viewport without scrolling.
@@ -171,14 +196,14 @@ class RefreshableTapPictureCard extends HTMLElement {
     // Pre-build empty cells for the main grid
     this._cells = [];
     for (let i = 0; i < count; i++) {
-      const cell        = document.createElement('div');
-      cell.className    = 'cell';
-      const img         = document.createElement('img');
-      img.decoding      = 'async';
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const img = document.createElement('img');
+      img.decoding = 'async';
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder';
-      const label       = document.createElement('span');
-      label.className   = 'label';
+      const label = document.createElement('span');
+      label.className = 'label';
       cell.appendChild(img);
       cell.appendChild(placeholder);
       cell.appendChild(label);
@@ -189,14 +214,14 @@ class RefreshableTapPictureCard extends HTMLElement {
     // Pre-build empty cells for the lightbox grid
     this._lightboxCells = [];
     for (let i = 0; i < lightboxCount; i++) {
-      const cell        = document.createElement('div');
-      cell.className    = 'cell';
-      const img         = document.createElement('img');
-      img.decoding      = 'async';
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const img = document.createElement('img');
+      img.decoding = 'async';
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder';
-      const label       = document.createElement('span');
-      label.className   = 'label';
+      const label = document.createElement('span');
+      label.className = 'label';
       cell.appendChild(img);
       cell.appendChild(placeholder);
       cell.appendChild(label);
@@ -213,21 +238,22 @@ class RefreshableTapPictureCard extends HTMLElement {
     });
 
     // Initial fetch + start interval
-    this._fetchAndUpdate();
+    this._fetchAndUpdate('initial');
     if (this._interval) clearInterval(this._interval);
-    this._interval = setInterval(() => this._fetchAndUpdate(), refreshInterval);
+    this._interval = setInterval(() => this._fetchAndUpdate('interval'), refreshInterval);
   }
 
-  _fetchAndUpdate() {
-    const count         = this._config.count          || 3;
+  _fetchAndUpdate(reason = 'interval') {
+    const count = this._config.count || 3;
     const lightboxCount = this._config.lightbox_count || 6;
-    const url           = this._config.url;
+    const url = this._config.url;
 
-    fetch(`${url}?_t=${Date.now()}`)
+    console.debug(`[rtp-card] fetching (${reason})`, url);
+    fetch(`${url}?_t=${Date.now()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         const thumbs = data.thumbnails || [];
-        this._patch(this._cells,         thumbs.slice(0, count).reverse());
+        this._patch(this._cells, thumbs.slice(0, count).reverse());
         this._patch(this._lightboxCells, thumbs.slice(0, lightboxCount).reverse());
       })
       .catch(() => { /* ignore fetch errors — stale display is fine */ });
@@ -255,12 +281,23 @@ class RefreshableTapPictureCard extends HTMLElement {
         }
       }
       cell.label.textContent = this._fuzzyAge(thumb.ts);
-      cell.label.dataset.ts  = thumb.ts;
+      cell.label.dataset.ts = thumb.ts;
     });
+  }
+
+  connectedCallback() {
+    // Restart the interval if the element is reconnected to the DOM after
+    // being removed (HA does this during rendering and view navigation).
+    if (this._config && !this._interval) {
+      const refreshInterval = (this._config.refresh_interval || 30) * 1000;
+      this._fetchAndUpdate();
+      this._interval = setInterval(() => this._fetchAndUpdate(), refreshInterval);
+    }
   }
 
   disconnectedCallback() {
     if (this._interval) clearInterval(this._interval);
+    this._interval = null;
   }
 
   getCardSize() {

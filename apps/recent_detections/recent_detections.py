@@ -56,7 +56,10 @@ try:
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            self.trigger_delay = int(self.args.get("trigger_delay", 10))
+            self.trigger_delay            = int(self.args.get("trigger_delay", 120)) # 2 minutes
+            self.thumbnail_retry_interval = int(self.args.get("thumbnail_retry_interval", 5)) # 5 seconds
+            self.thumbnail_retry_max      = int(self.args.get("thumbnail_retry_max", 12))
+            self._retry_count             = 0
 
             trigger_sensors = self.args.get("trigger_sensors", [])
             for sensor in trigger_sensors:
@@ -67,12 +70,20 @@ try:
 
         def on_sensor_trigger(self, entity, attribute, old, new, kwargs):
             """Sync callback required by AppDaemon for listen_state."""
+            self._retry_count = 0
             detection_type = next(
                 (t for t in ["person", "vehicle", "animal", "package"] if t in entity),
                 "person",
             )
             self.log(f"Triggered by state change: {entity} — injecting placeholder, fetching in {self.trigger_delay}s")
             self._inject_placeholder(detection_type)
+            # Signal the card immediately so it shows the placeholder icon now,
+            # before the thumbnail is ready.
+            self.set_state(
+                "sensor.unifi_detections_updated",
+                state=f"pending_{datetime.now(tz=timezone.utc).isoformat()}",
+                attributes={"pending": True, "type": detection_type},
+            )
             self.run_in(self._do_fetch, self.trigger_delay)
 
         def _inject_placeholder(self, detection_type):
@@ -100,7 +111,7 @@ try:
                 self.log("Triggered by timer")
             else:
                 self.log("Fetching after trigger delay")
-            await _fetch(
+            new_count, has_nulls = await _fetch(
                 host=self.host,
                 port=self.port,
                 username=self.username,
@@ -113,6 +124,20 @@ try:
                 web_root=self.web_root,
                 log=self.log,
             )
+            if new_count:
+                self._retry_count = 0
+                self.set_state(
+                    "sensor.unifi_detections_updated",
+                    state=datetime.now(tz=timezone.utc).isoformat(),
+                    attributes={"new_count": new_count},
+                )
+                self.log(f"Signalled card: {new_count} new thumbnail(s)")
+            if has_nulls and self._retry_count < self.thumbnail_retry_max:
+                self._retry_count += 1
+                self.log(f"Null thumbnails present, retry {self._retry_count}/{self.thumbnail_retry_max} in {self.thumbnail_retry_interval}s")
+                self.run_in(self._do_fetch, self.thumbnail_retry_interval)
+            elif not has_nulls:
+                self._retry_count = 0
 
 except ImportError:
     pass  # Not running under AppDaemon — CLI mode only
@@ -152,7 +177,8 @@ async def _fetch(*, host, port, username, password, verify_ssl,
 
         log(f"Found {len(detections)} matching detection(s) (out of {len(events)} total events)")
 
-        saved_paths = []
+        new_count       = 0
+        manifest_entries = []
         for event in detections:
             types       = [t.value for t in event.smart_detect_types if t in watch_types]
             primary     = types[0]
@@ -165,8 +191,12 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             out_path = output_dir / filename
 
             if out_path.exists():
-                log(f"  Skipping (already saved): {filename}")
-                saved_paths.append(out_path)
+                manifest_entries.append({
+                    "url":    f"{web_root}/{filename}",
+                    "ts":     event.start.isoformat(),
+                    "camera": camera_name,
+                    "type":   primary,
+                })
                 continue
 
             log(f"  Fetching: {primary} on '{camera_name}' at {event_ts} (score={event.score})")
@@ -176,34 +206,39 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                     async with aiofiles.open(out_path, "wb") as f:
                         await f.write(thumb)
                     log(f"    -> {out_path} ({len(thumb)/1024:.1f} KB)")
-                    saved_paths.append(out_path)
+                    manifest_entries.append({
+                        "url":    f"{web_root}/{filename}",
+                        "ts":     event.start.isoformat(),
+                        "camera": camera_name,
+                        "type":   primary,
+                    })
+                    new_count += 1
                 else:
                     log(f"    -> Empty response for event {event.id}")
+                    manifest_entries.append({
+                        "url":     None,
+                        "ts":      event.start.isoformat(),
+                        "camera":  camera_name,
+                        "type":    primary,
+                        "pending": True,
+                    })
             except Exception as e:
                 log(f"    -> Error: {e}")
 
-        if saved_paths:
-            manifest = {
-                "updated": now.isoformat(),
-                "thumbnails": [
-                    {
-                        "url": f"{web_root}/{p.name}",
-                        "ts":  datetime.strptime(
-                                   f"{p.stem.split('_')[0]}{p.stem.split('_')[1]}",
-                                   "%Y%m%d%H%M%S"
-                               ).isoformat(),
-                        "camera": p.stem.split("_", 2)[2].rsplit("_", 1)[0],
-                        "type":   p.stem.rsplit("_", 1)[-1],
-                    }
-                    for p in saved_paths  # newest-first (already sorted)
-                ],
-            }
+        has_nulls = any(e["url"] is None for e in manifest_entries)
+
+        if manifest_entries:
+            manifest = {"updated": now.isoformat(), "thumbnails": manifest_entries}
             manifest_path = output_dir / "recent.json"
             manifest_path.write_text(json.dumps(manifest))
-            log(f"Manifest saved -> {manifest_path} ({len(manifest['thumbnails'])} thumbnails)")
+            null_count = sum(1 for e in manifest_entries if e["url"] is None)
+            log(f"Manifest saved -> {manifest_path} ({len(manifest_entries)} thumbnails, {new_count} new, {null_count} pending)")
+
+        return new_count, has_nulls
 
     except Exception as e:
         log(f"fetch failed: {e}")
+        return 0, False
     finally:
         await client.close_session()
 

@@ -68,7 +68,10 @@
     </p>
 
     <div class="controls">
-      <button onclick="document.getElementById('card')._fetchAndUpdate()">Force refresh</button>
+      <button onclick="document.getElementById('card')._fetchAndUpdate()">
+        Force refresh
+      </button>
+      <button onclick="simulateHass(new Date().toISOString())">Simulate set hass</button>
       <button onclick="simulateTrigger('person')">Trigger: person</button>
       <button onclick="simulateTrigger('vehicle')">Trigger: vehicle</button>
       <button onclick="simulateTrigger('animal')">Trigger: animal</button>
@@ -83,30 +86,27 @@
     <script src="apps/recent_detections/refreshable-tap-picture-card.js"></script>
     <script>
       const _realFetch = window.fetch.bind(window);
-      let _mockData = null;
 
-      // On the first fetch, load from disk and rewrite /local/unifi_events/ → output/.
-      // After that, serve from the in-memory _mockData so simulateTrigger can mutate it.
+      // Active placeholder entries from simulateTrigger, merged on top of disk data each fetch.
+      // This lets the interval always re-read from disk (picks up new Python script runs)
+      // while still supporting the simulate workflow.
+      let _pending = [];
+
       window.fetch = function (input, init) {
         if (typeof input === "string" && input.includes("recent.json")) {
-          if (_mockData) {
-            return Promise.resolve(
-              new Response(JSON.stringify(_mockData), {
-                headers: { "Content-Type": "application/json" },
-              }),
-            );
-          }
           return _realFetch(input, init)
             .then((r) => r.json())
             .then((data) => {
-              data.thumbnails = data.thumbnails.map((t) => ({
-                ...t,
-                url: t.url
-                  ? t.url.replace("/local/unifi_events/", "output/")
-                  : null,
-              }));
-              _mockData = data;
-              return new Response(JSON.stringify(_mockData), {
+              data.thumbnails = [
+                ..._pending,
+                ...data.thumbnails.map((t) => ({
+                  ...t,
+                  url: t.url
+                    ? t.url.replace("/local/unifi_events/", "output/")
+                    : null,
+                })),
+              ];
+              return new Response(JSON.stringify(data), {
                 headers: { "Content-Type": "application/json" },
               });
             });
@@ -114,35 +114,37 @@
         return _realFetch(input, init);
       };
 
+      const ENTITY = "sensor.unifi_detections_updated";
+
       document.getElementById("card").setConfig({
         url: "output/recent.json",
+        entity: ENTITY,
         count: 3,
         lightbox_count: 9,
         cols: 3,
-        refresh_interval: 10,
+        refresh_interval: 120,
       });
 
-      // Simulate a sensor trigger: null out the first thumbnail URL (placeholder state),
-      // then restore it after 5 seconds (thumbnail ready state).
+      function simulateHass(state) {
+        document.getElementById("card").hass = {
+          states: { [ENTITY]: { state } },
+        };
+      }
+
+      // Simulate a sensor trigger: prepend a pending placeholder, then remove it after 5s.
+      // The next interval fetch re-reads from disk, so the real thumbnail naturally appears.
       function simulateTrigger(type) {
-        if (!_mockData) return;
-        // Prepend a pending placeholder of the given type
-        const pending = { url: null, ts: new Date().toISOString(), type, camera: 'unknown', pending: true };
-        _mockData.thumbnails.unshift(pending);
+        const entry = {
+          url: null,
+          ts: new Date().toISOString(),
+          type,
+          camera: "unknown",
+          pending: true,
+        };
+        _pending.push(entry);
         document.getElementById("card")._fetchAndUpdate();
-        // After 5 seconds, fill in the real URL from the next available thumbnail
         setTimeout(() => {
-          const idx = _mockData.thumbnails.indexOf(pending);
-          if (idx !== -1) {
-            // Borrow a URL from a later entry to simulate thumbnail arriving
-            const donor = _mockData.thumbnails.find((t, i) => i > idx && t.url);
-            _mockData.thumbnails[idx] = {
-              ...pending,
-              url: donor ? donor.url : null,
-              pending: false,
-            };
-            delete _mockData.thumbnails[idx].pending;
-          }
+          _pending = _pending.filter((e) => e !== entry);
           document.getElementById("card")._fetchAndUpdate();
         }, 5000);
       }

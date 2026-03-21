@@ -152,19 +152,21 @@ In your dashboard, add a **Manual card**:
 ```yaml
 type: custom:refreshable-tap-picture-card
 url: /local/unifi_events/recent.json
+entity: sensor.unifi_detections_updated
 count: 3
 lightbox_count: 6
 cols: 3
-refresh_interval: 30
+refresh_interval: 300
 ```
 
-| Key               | Default | Description                                              |
-| ----------------- | ------- | -------------------------------------------------------- |
-| `url`             | —       | Path to `recent.json` (required)                         |
-| `count`           | `3`     | Thumbnails shown in the card grid                        |
-| `lightbox_count`  | `6`     | Thumbnails shown when the card is tapped                 |
-| `cols`            | `3`     | Columns per row in both the grid and lightbox            |
-| `refresh_interval`| `30`    | Seconds between JSON re-fetches                          |
+| Key               | Default | Description                                                                     |
+| ----------------- | ------- | ------------------------------------------------------------------------------- |
+| `url`             | —       | Path to `recent.json` (required)                                                |
+| `entity`          | —       | HA entity ID updated by AppDaemon on new detections; triggers instant card refresh with zero idle polling |
+| `count`           | `3`     | Thumbnails shown in the card grid                                               |
+| `lightbox_count`  | `6`     | Thumbnails shown when the card is tapped                                        |
+| `cols`            | `3`     | Columns per row in both the grid and lightbox                                   |
+| `refresh_interval`| `300`   | Fallback polling interval in seconds (only active if `entity` is not set or as a safety net) |
 
 ---
 
