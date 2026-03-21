@@ -43,7 +43,7 @@ try:
             self.password    = self.args["password"]
             self.verify_ssl  = bool(self.args.get("verify_ssl", False))
             self.hours       = float(self.args.get("hours", 2.0))
-            self.count       = self.args.get("count")
+            self.count       = int(self.args["count"]) if "count" in self.args else None
             self.interval    = int(self.args.get("interval", 300))
             self.output_dir  = Path(self.args.get("output_dir", "/homeassistant/www/unifi_events"))
             self.web_root    = self.args.get("web_root", "/local/unifi_events")
@@ -100,7 +100,7 @@ try:
                 "pending": True,
             })
             if self.count:
-                event_feed["thumbnails"] = event_feed["thumbnails"][:int(self.count)]
+                event_feed["thumbnails"] = event_feed["thumbnails"][:self.count]
             event_feed["updated"] = datetime.now(tz=timezone.utc).isoformat()
             feed_path.write_text(json.dumps(event_feed))
 
@@ -167,7 +167,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
 
         detections.sort(key=lambda e: e.start, reverse=True)
         if count is not None:
-            detections = detections[:int(count)]
+            detections = detections[:count]
 
         log(f"Found {len(detections)} matching detection(s) (out of {len(events)} total events)")
 
@@ -179,17 +179,18 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             if event.camera_id in client.bootstrap.cameras:
                 camera_name = client.bootstrap.cameras[event.camera_id].name.lower().replace(" ", "_")
 
-            event_ts = event.start.astimezone().strftime("%Y%m%d_%H%M%S")
-            filename = f"{event_ts}_{camera_name}_{primary}.jpg"
-            out_path = output_dir / filename
+            event_ts   = event.start.astimezone().strftime("%Y%m%d_%H%M%S")
+            filename   = f"{event_ts}_{camera_name}_{primary}.jpg"
+            out_path   = output_dir / filename
+            feed_entry = {
+                "url":    f"{web_root}/{filename}",
+                "ts":     event.start.isoformat(),
+                "camera": camera_name,
+                "type":   primary,
+            }
 
             if out_path.exists():
-                feed_entries.append({
-                    "url":    f"{web_root}/{filename}",
-                    "ts":     event.start.isoformat(),
-                    "camera": camera_name,
-                    "type":   primary,
-                })
+                feed_entries.append(feed_entry)
                 continue
 
             log(f"  Fetching: {primary} on '{camera_name}' at {event_ts} (score={event.score})")
@@ -199,12 +200,7 @@ async def _fetch(*, host, port, username, password, verify_ssl,
                     async with aiofiles.open(out_path, "wb") as f:
                         await f.write(thumb)
                     log(f"    -> {out_path} ({len(thumb)/1024:.1f} KB)")
-                    feed_entries.append({
-                        "url":    f"{web_root}/{filename}",
-                        "ts":     event.start.isoformat(),
-                        "camera": camera_name,
-                        "type":   primary,
-                    })
+                    feed_entries.append(feed_entry)
                 else:
                     log(f"    -> No thumbnail available for event {event.id}")
             except Exception as e:
@@ -238,10 +234,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--hours",     type=float, default=2.0,  help="Hours back to look (default: 2)")
     parser.add_argument("--count",     type=int,   default=None, metavar="N",
-                        help="Max thumbnails to include in the manifest. "
+                        help="Max thumbnails to include in the event feed. "
                              "Should be >= the card's lightbox_count (default: all)")
     parser.add_argument("--web-root",  default="/local/unifi_events",
-                        help="URL prefix for thumbnail paths in the manifest (default: /local/unifi_events)")
+                        help="URL prefix for thumbnail paths in the event feed (default: /local/unifi_events)")
     parser.add_argument("--types",  nargs="+",  default=None,
                         choices=["person", "animal", "vehicle", "package"],
                         help="Detection types to fetch (default: all)")
