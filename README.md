@@ -6,10 +6,11 @@ for display on a Home Assistant dashboard via a custom Lovelace card.
 ```yaml
 type: custom:refreshable-tap-picture-card
 url: /local/unifi_events/recent.json
+entity: sensor.unifi_detections_updated
 count: 3
-lightbox_count: 6
+lightbox_count: 9
 cols: 3
-refresh_interval: 30
+refresh_interval: 300
 ```
 
 ---
@@ -39,12 +40,12 @@ python3 recent_detections.py --count 6
 
 Options:
 
-| Flag                    | Default              | Description                                        |
-| ----------------------- | -------------------- | -------------------------------------------------- |
-| `--hours 4`             | `2`                  | How far back to search for events                  |
-| `--count 6`             | none (all)           | Max thumbnails to include in the manifest          |
-| `--web-root /local/...` | `/local/unifi_events`| URL prefix for thumbnail paths written to the JSON |
-| `--types person animal` | all                  | Restrict to specific detection types               |
+| Flag                    | Default               | Description                                        |
+| ----------------------- | --------------------- | -------------------------------------------------- |
+| `--hours 4`             | `2`                   | How far back to search for events                  |
+| `--count 6`             | none (all)            | Max thumbnails to include in the manifest          |
+| `--web-root /local/...` | `/local/unifi_events` | URL prefix for thumbnail paths written to the JSON |
+| `--types person animal` | all                   | Restrict to specific detection types               |
 
 Thumbnails are cached in `./output/` and the manifest is written to `./output/recent.json`.
 Re-runs skip thumbnails that are already saved.
@@ -105,7 +106,7 @@ HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
 
 ### Step 4 — Install the custom Lovelace card
 
-1. Copy `apps/recent_detections/refreshable-tap-picture-card.js` to `/homeassistant/www/`
+1. Copy `refreshable-tap-picture-card.js` to `/homeassistant/www/`
 2. In Home Assistant, go to **Settings → Dashboards → Resources** (three-dot menu, top right) → **Add resource**
 3. Set URL to `/local/refreshable-tap-picture-card.js`, type **JavaScript module**
 
@@ -159,30 +160,30 @@ cols: 3
 refresh_interval: 300
 ```
 
-| Key               | Default | Description                                                                     |
-| ----------------- | ------- | ------------------------------------------------------------------------------- |
-| `url`             | —       | Path to `recent.json` (required)                                                |
-| `entity`          | —       | HA entity ID updated by AppDaemon on new detections; triggers instant card refresh with zero idle polling |
-| `count`           | `3`     | Thumbnails shown in the card grid                                               |
-| `lightbox_count`  | `6`     | Thumbnails shown when the card is tapped                                        |
-| `cols`            | `3`     | Columns per row in both the grid and lightbox                                   |
-| `refresh_interval`| `300`   | Fallback polling interval in seconds (only active if `entity` is not set or as a safety net) |
+| Key                | Default | Description                                                                                               |
+| ------------------ | ------- | --------------------------------------------------------------------------------------------------------- |
+| `url`              | —       | Path to `recent.json` (required)                                                                          |
+| `entity`           | —       | HA entity ID updated by AppDaemon on new detections; triggers instant card refresh with zero idle polling |
+| `count`            | `3`     | Thumbnails shown in the card grid                                                                         |
+| `lightbox_count`   | `6`     | Thumbnails shown when the card is tapped                                                                  |
+| `cols`             | `3`     | Columns per row in both the grid and lightbox                                                             |
+| `refresh_interval` | `300`   | Fallback polling interval in seconds (only active if `entity` is not set or as a safety net)              |
 
 ---
 
 ## Configuration reference (apps.yaml)
 
-| Key               | Default                           | Description                                       |
-| ----------------- | --------------------------------- | ------------------------------------------------- |
-| `host`            | —                                 | Use `!secret unifi_protect_host`                  |
-| `port`            | `443`                             | HTTPS port                                        |
-| `username`        | —                                 | Use `!secret unifi_protect_username`              |
-| `password`        | —                                 | Use `!secret unifi_protect_password`              |
-| `verify_ssl`      | `false`                           | Set `true` if you have a valid cert               |
-| `hours`           | `2`                               | How far back to search each run                   |
-| `count`           | none (all)                        | Max thumbnails to include in the manifest         |
-| `types`           | all                               | List of: `person`, `animal`, `vehicle`, `package` |
-| `interval`        | `300`                             | Seconds between runs                              |
-| `trigger_delay`   | `10`                              | Seconds after sensor fires before fetching; gives the detection time to end and UniFi Protect time to generate the thumbnail |
-| `output_dir`      | `/homeassistant/www/unifi_events` | Where to write thumbnails and manifest            |
-| `web_root`        | `/local/unifi_events`             | URL prefix for thumbnail paths in the manifest    |
+| Key             | Default                           | Description                                                                                                                  |
+| --------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `host`          | —                                 | Use `!secret unifi_protect_host`                                                                                             |
+| `port`          | `443`                             | HTTPS port                                                                                                                   |
+| `username`      | —                                 | Use `!secret unifi_protect_username`                                                                                         |
+| `password`      | —                                 | Use `!secret unifi_protect_password`                                                                                         |
+| `verify_ssl`    | `false`                           | Set `true` if you have a valid cert                                                                                          |
+| `hours`         | `2`                               | How far back to search each run                                                                                              |
+| `count`         | none (all)                        | Max thumbnails to include in the manifest                                                                                    |
+| `types`         | all                               | List of: `person`, `animal`, `vehicle`, `package`                                                                            |
+| `interval`      | `300`                             | Seconds between runs                                                                                                         |
+| `trigger_delay` | `10`                              | Seconds after sensor fires before fetching; gives the detection time to end and UniFi Protect time to generate the thumbnail |
+| `output_dir`    | `/homeassistant/www/unifi_events` | Where to write thumbnails and manifest                                                                                       |
+| `web_root`      | `/local/unifi_events`             | URL prefix for thumbnail paths in the manifest                                                                               |
