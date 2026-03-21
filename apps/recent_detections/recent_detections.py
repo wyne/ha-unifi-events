@@ -69,7 +69,9 @@ try:
             self.run_every(self._do_fetch, f"now+{self.interval}", self.interval)
 
         def on_sensor_trigger(self, entity, attribute, old, new, kwargs):
-            """Sync callback required by AppDaemon for listen_state."""
+            """Fired by a HA binary sensor (e.g. person/vehicle detected). Injects a placeholder
+            into the feed immediately so the card shows something, then arms fast polling and
+            schedules the first real fetch after trigger_delay. Sync required by AppDaemon."""
             self._trigger_polls_remaining = self.trigger_poll_count
             detection_type = next(
                 (t for t in ["person", "vehicle", "animal", "package"] if t in entity),
@@ -87,6 +89,8 @@ try:
             self.run_in(self._do_fetch, self.trigger_delay)
 
         def _inject_placeholder(self, detection_type):
+            """Prepends a null-URL entry to recent.json so the card shows a typed icon
+            immediately while the real thumbnail is still being fetched."""
             feed_path = self.output_dir / "recent.json"
             try:
                 event_feed = json.loads(feed_path.read_text()) if feed_path.exists() else {"thumbnails": []}
@@ -105,6 +109,8 @@ try:
             feed_path.write_text(json.dumps(event_feed))
 
         async def _do_fetch(self, kwargs=None, trigger=None):
+            """Runs a full fetch, signals the card, and continues fast polling if a sensor
+            trigger is active and no new thumbnail has been found yet."""
             if trigger == "startup":
                 self.log("Triggered by startup")
             elif kwargs:
@@ -145,6 +151,9 @@ except ImportError:
 
 async def _fetch(*, host, port, username, password, verify_ssl,
                  hours, watch_types, count, output_dir, web_root, log):
+    """Connects to UniFi Protect, fetches completed smart detect events from the last `hours`,
+    downloads any missing thumbnails, and writes recent.json. Returns True if at least one
+    new thumbnail was saved (used to stop post-trigger polling early)."""
     now   = datetime.now(tz=timezone.utc)
     since = now - timedelta(hours=hours)
 
