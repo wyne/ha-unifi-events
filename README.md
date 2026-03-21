@@ -1,7 +1,8 @@
 # ha-unifi-events
 
-Fetches recent UniFi Protect AI detection thumbnails and writes a JSON manifest
-for display on a Home Assistant dashboard via a custom Lovelace card.
+Display recent [UniFi Protect](https://ui.com/camera-security) AI detection thumbnails on your Home Assistant dashboard — persons, vehicles, animals, and packages — with instant updates via sensor triggers.
+
+![Card screenshot](card.png)
 
 ```yaml
 type: custom:unifi-events-card
@@ -15,52 +16,7 @@ refresh_interval: 300
 
 ---
 
-## Running locally (testing)
-
-**1. Install dependencies**
-
-```bash
-pip install -r requirements.txt
-```
-
-**2. Create your local config**
-
-```bash
-cp local_config.example.py local_config.py
-```
-
-Edit `local_config.py` with your UniFi Protect credentials. This file is gitignored and never copied to Home Assistant.
-
-**3. Run**
-
-```bash
-cd apps/recent_detections
-python3 recent_detections.py --count 6
-```
-
-Options:
-
-| Flag                    | Default               | Description                                        |
-| ----------------------- | --------------------- | -------------------------------------------------- |
-| `--hours 4`             | `2`                   | How far back to search for events                  |
-| `--count 6`             | none (all)            | Max thumbnails to include in the manifest          |
-| `--web-root /local/...` | `/local/unifi_events` | URL prefix for thumbnail paths written to the JSON |
-| `--types person animal` | all                   | Restrict to specific detection types               |
-
-Thumbnails are cached in `./output/` and the manifest is written to `./output/recent.json`.
-Re-runs skip thumbnails that are already saved.
-
-**4. Preview in browser**
-
-```bash
-cd ../..
-python3 -m http.server 8080
-# open http://localhost:8080/test_card.html
-```
-
----
-
-## Running on Home Assistant (AppDaemon via HACS)
+## Installation
 
 ### Prerequisites
 
@@ -99,7 +55,7 @@ python_packages:
 ### Step 3 — Install this app via HACS
 
 1. In HACS, click the three-dot menu (top right) → **Custom repositories**
-2. Paste in this repo's GitHub URL, set category to **AppDaemon**, click **Add**
+2. Paste `https://github.com/wyne/ha-unifi-events`, set category to **AppDaemon**, click **Add**
 3. Find "UniFi Recent Detections" in HACS and click **Download**
 
 HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
@@ -140,10 +96,10 @@ In Settings → Add-ons → AppDaemon → Log, you should see:
 ```
 Starting apps: ['recent_detections', ...]
 Connected. Fetching events from the last 2h...
-Manifest saved -> /homeassistant/www/unifi_events/recent.json (6 thumbnails)
+Event feed saved -> /homeassistant/www/unifi_events/recent.json (6 entries)
 ```
 
-`/homeassistant/www/` is served by Home Assistant at `/local/` — the manifest will be available at
+`/homeassistant/www/` is served by Home Assistant at `/local/` — the event feed will be available at
 `/local/unifi_events/recent.json`.
 
 ### Step 9 — Add the dashboard card
@@ -173,17 +129,63 @@ refresh_interval: 300
 
 ## Configuration reference (apps.yaml)
 
-| Key             | Default                           | Description                                                                                                                  |
-| --------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `host`          | —                                 | Use `!secret unifi_protect_host`                                                                                             |
-| `port`          | `443`                             | HTTPS port                                                                                                                   |
-| `username`      | —                                 | Use `!secret unifi_protect_username`                                                                                         |
-| `password`      | —                                 | Use `!secret unifi_protect_password`                                                                                         |
-| `verify_ssl`    | `false`                           | Set `true` if you have a valid cert                                                                                          |
-| `hours`         | `2`                               | How far back to search each run                                                                                              |
-| `count`         | none (all)                        | Max thumbnails to include in the manifest                                                                                    |
-| `types`         | all                               | List of: `person`, `animal`, `vehicle`, `package`                                                                            |
-| `interval`      | `300`                             | Seconds between runs                                                                                                         |
-| `trigger_delay` | `10`                              | Seconds after sensor fires before fetching; gives the detection time to end and UniFi Protect time to generate the thumbnail |
-| `output_dir`    | `/homeassistant/www/unifi_events` | Where to write thumbnails and manifest                                                                                       |
-| `web_root`      | `/local/unifi_events`             | URL prefix for thumbnail paths in the manifest                                                                               |
+| Key                    | Default                           | Description                                                                                                   |
+| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `host`                 | —                                 | Use `!secret unifi_protect_host`                                                                              |
+| `port`                 | `443`                             | HTTPS port                                                                                                    |
+| `username`             | —                                 | Use `!secret unifi_protect_username`                                                                          |
+| `password`             | —                                 | Use `!secret unifi_protect_password`                                                                          |
+| `verify_ssl`           | `false`                           | Set `true` if you have a valid cert                                                                           |
+| `hours`                | `2`                               | How far back to search each run                                                                               |
+| `count`                | none (all)                        | Max thumbnails to include in the event feed                                                                   |
+| `types`                | all                               | List of: `person`, `animal`, `vehicle`, `package`                                                             |
+| `interval`             | `300`                             | Seconds between scheduled runs                                                                                |
+| `trigger_delay`        | `120`                             | Seconds after sensor fires before fetching; gives UniFi Protect time to finalize the event and thumbnail     |
+| `trigger_poll_interval`| `5`                               | Seconds between fast polls after a sensor trigger                                                             |
+| `trigger_poll_count`   | `12`                              | Max fast polls before giving up (12 × 5s = 60s window)                                                       |
+| `output_dir`           | `/homeassistant/www/unifi_events` | Where to write thumbnails and the event feed                                                                  |
+| `web_root`             | `/local/unifi_events`             | URL prefix for thumbnail paths in the event feed                                                              |
+| `trigger_sensors`      | `[]`                              | List of HA binary sensor entity IDs that trigger an immediate fetch (e.g. UniFi motion/smart detect sensors) |
+
+---
+
+## Local testing
+
+**1. Install dependencies**
+
+```bash
+pip install -r requirements.txt
+```
+
+**2. Create your local config**
+
+```bash
+cp local_config.example.py local_config.py
+```
+
+Edit `local_config.py` with your UniFi Protect credentials. This file is gitignored and never copied to Home Assistant.
+
+**3. Run**
+
+```bash
+cd apps/recent_detections
+python3 recent_detections.py --count 6
+```
+
+| Flag                    | Default               | Description                                          |
+| ----------------------- | --------------------- | ---------------------------------------------------- |
+| `--hours 4`             | `2`                   | How far back to search for events                    |
+| `--count 6`             | none (all)            | Max thumbnails to include in the event feed          |
+| `--web-root /local/...` | `/local/unifi_events` | URL prefix for thumbnail paths written to the JSON   |
+| `--types person animal` | all                   | Restrict to specific detection types                 |
+
+Thumbnails are cached in `./output/` and the event feed is written to `./output/recent.json`.
+Re-runs skip thumbnails that are already saved.
+
+**4. Preview in browser**
+
+```bash
+cd ../..
+python3 -m http.server 8080
+# open http://localhost:8080/test_card.html
+```
