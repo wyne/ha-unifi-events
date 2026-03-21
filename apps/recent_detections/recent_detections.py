@@ -130,18 +130,24 @@ try:
                 web_root=self.web_root,
                 log=self.log,
             )
-            self.set_state(
-                "sensor.unifi_detections_updated",
-                state=datetime.now(tz=timezone.utc).isoformat(),
-            )
             if self._trigger_polls_remaining > 0:
                 if found_new:
-                    self.log("Post-trigger poll complete: new thumbnail found")
                     self._trigger_polls_remaining = 0
+                    self.log("Post-trigger poll complete: new thumbnail found")
+                    self.set_state(
+                        "sensor.unifi_detections_updated",
+                        state=datetime.now(tz=timezone.utc).isoformat(),
+                    )
                 else:
                     self._trigger_polls_remaining -= 1
                     self.log(f"Post-trigger poll, {self._trigger_polls_remaining} remaining")
                     self.run_in(self._do_fetch, self.trigger_poll_interval)
+                    # no set_state — card keeps showing the placeholder until a real thumbnail arrives
+            else:
+                self.set_state(
+                    "sensor.unifi_detections_updated",
+                    state=datetime.now(tz=timezone.utc).isoformat(),
+                )
 
 except ImportError:
     pass  # Not running under AppDaemon — CLI mode only
