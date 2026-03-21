@@ -4,7 +4,7 @@ Fetches recent UniFi Protect AI detection thumbnails and writes a JSON manifest
 for display on a Home Assistant dashboard via a custom Lovelace card.
 
 ```yaml
-type: custom:refreshable-tap-picture-card
+type: custom:unifi-events-card
 url: /local/unifi_events/recent.json
 entity: sensor.unifi_detections_updated
 count: 3
@@ -106,9 +106,9 @@ HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
 
 ### Step 4 — Install the custom Lovelace card
 
-1. Copy `refreshable-tap-picture-card.js` to `/homeassistant/www/`
+1. Copy `unifi-events-card.js` to `/homeassistant/www/`
 2. In Home Assistant, go to **Settings → Dashboards → Resources** (three-dot menu, top right) → **Add resource**
-3. Set URL to `/local/refreshable-tap-picture-card.js`, type **JavaScript module**
+3. Set URL to `/local/unifi-events-card.js`, type **JavaScript module**
 
 ### Step 5 — Add your credentials as secrets
 
@@ -151,7 +151,7 @@ Manifest saved -> /homeassistant/www/unifi_events/recent.json (6 thumbnails)
 In your dashboard, add a **Manual card**:
 
 ```yaml
-type: custom:refreshable-tap-picture-card
+type: custom:unifi-events-card
 url: /local/unifi_events/recent.json
 entity: sensor.unifi_detections_updated
 count: 3

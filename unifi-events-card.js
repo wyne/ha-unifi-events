@@ -1,6 +1,6 @@
 const VERSION = '5';
 
-class RefreshableTapPictureCard extends HTMLElement {
+class UnifiEventsCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
@@ -305,4 +305,4 @@ class RefreshableTapPictureCard extends HTMLElement {
   }
 }
 
-customElements.define('refreshable-tap-picture-card', RefreshableTapPictureCard);
+customElements.define('unifi-events-card', UnifiEventsCard);
