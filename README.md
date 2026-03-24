@@ -63,8 +63,13 @@ HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
 ### Step 4 — Install the custom Lovelace card
 
 1. Copy `unifi-events-card.js` to `/homeassistant/www/`
-2. In Home Assistant, go to **Settings → Dashboards → Resources** (three-dot menu, top right) → **Add resource**
-3. Set URL to `/local/unifi-events-card.js`, type **JavaScript module**
+2. In Home Assistant, go to **Settings → Dashboards**
+3. Click the three-dot menu (top right) → **Resources**
+   > If **Resources** is not visible, go to your profile (bottom-left) and enable **Advanced Mode**
+4. Click **+ Add resource**
+5. Set the URL to `/local/unifi-events-card.js`
+6. Set the resource type to **JavaScript module**
+7. Click **Create** — reload the page if the card doesn't appear immediately
 
 ### Step 5 — Add your credentials as secrets
 
