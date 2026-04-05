@@ -60,16 +60,13 @@ python_packages:
 
 HACS will place the app at `/homeassistant/appdaemon/apps/recent_detections/`.
 
-### Step 4 — Install the custom Lovelace card
+### Step 4 — Install the Lovelace card via HACS
 
-1. Copy `unifi-events-card.js` to `/homeassistant/www/`
-2. In Home Assistant, go to **Settings → Dashboards**
-3. Click the three-dot menu (top right) → **Resources**
-   > If **Resources** is not visible, go to your profile (bottom-left) and enable **Advanced Mode**
-4. Click **+ Add resource**
-5. Set the URL to `/local/unifi-events-card.js`
-6. Set the resource type to **JavaScript module**
-7. Click **Create** — reload the page if the card doesn't appear immediately
+1. In HACS, click the three-dot menu (top right) → **Custom repositories**
+2. Paste `https://github.com/wyne/ha-unifi-events-card`, set category to **Frontend**, click **Add**
+3. Find "UniFi Events Card" in HACS and click **Download**
+
+HACS will install the card and register it as a Lovelace resource automatically.
 
 ### Step 5 — Add your credentials as secrets
 
@@ -189,8 +186,4 @@ Re-runs skip thumbnails that are already saved.
 
 **4. Preview in browser**
 
-```bash
-cd ../..
-python3 -m http.server 8080
-# open http://localhost:8080/test_card.html
-```
+Use [ha-unifi-events-card](https://github.com/wyne/ha-unifi-events-card) — it includes `test_card.html` and reads from `output/recent.json`.

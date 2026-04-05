@@ -1,3 +1,5 @@
 {
-  "name": "UniFi Recent Detections"
+  "name": "UniFi Recent Detections",
+  "render_readme": true
 }
+
