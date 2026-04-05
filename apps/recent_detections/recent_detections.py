@@ -47,6 +47,7 @@ try:
             self.interval    = int(self.args.get("interval", 300))
             self.output_dir  = Path(self.args.get("output_dir", "/homeassistant/www/unifi_events"))
             self.web_root    = self.args.get("web_root", "/local/unifi_events")
+            self.cleanup     = bool(self.args.get("cleanup", True))
 
             raw_types = self.args.get("types")
             self.watch_types = (
@@ -128,6 +129,7 @@ try:
                 count=self.count,
                 output_dir=self.output_dir,
                 web_root=self.web_root,
+                cleanup=self.cleanup,
                 log=self.log,
             )
             if self._trigger_polls_remaining > 0:
@@ -156,7 +158,7 @@ except ImportError:
 # ── Shared fetch logic ─────────────────────────────────────────────────────────
 
 async def _fetch(*, host, port, username, password, verify_ssl,
-                 hours, watch_types, count, output_dir, web_root, log):
+                 hours, watch_types, count, output_dir, web_root, cleanup=True, log):
     """Connects to UniFi Protect, fetches completed smart detect events from the last `hours`,
     downloads any missing thumbnails, and writes recent.json. Returns True if at least one
     new thumbnail was saved (used to stop post-trigger polling early)."""
@@ -232,6 +234,13 @@ async def _fetch(*, host, port, username, password, verify_ssl,
             feed_path.write_text(json.dumps({"updated": now.isoformat(), "thumbnails": feed_entries}))
             log(f"Event feed saved -> {feed_path} ({len(feed_entries)} entries)")
 
+            if cleanup:
+                kept = {Path(t["url"]).name for t in feed_entries}
+                for f in output_dir.glob("*.jpg"):
+                    if f.name not in kept:
+                        f.unlink()
+                        log(f"Cleaned up old snapshot: {f.name}")
+
         return found_new
 
     except Exception as e:
@@ -265,6 +274,8 @@ if __name__ == "__main__":
     parser.add_argument("--types",  nargs="+",  default=None,
                         choices=["person", "animal", "vehicle", "package"],
                         help="Detection types to fetch (default: all)")
+    parser.add_argument("--no-cleanup", action="store_true",
+                        help="Keep old snapshot files that are no longer in the event feed")
     args = parser.parse_args()
 
     watch = {TYPE_MAP[t] for t in args.types} if args.types else ALL_WATCH_TYPES
@@ -282,5 +293,6 @@ if __name__ == "__main__":
         count=args.count,
         output_dir=output_dir,
         web_root=args.web_root,
+        cleanup=not args.no_cleanup,
         log=lambda msg: _log.info(msg),
     ))
