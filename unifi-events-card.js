@@ -168,7 +168,7 @@ class UnifiEventsCard extends HTMLElement {
 
       <div class="card" id="card">
         <div class="grid" id="grid"></div>
-        <span class="version">v${VERSION}</span>
+        ${this._config.show_version ? `<span class="version">v${VERSION}</span>` : ''}
       </div>
 
       <div class="lightbox" id="lightbox">
