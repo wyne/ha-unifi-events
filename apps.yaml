@@ -23,9 +23,16 @@ recent_detections:
   #   - package
 
   # Schedule
-  interval: 300     # seconds between runs (300 = every 5 minutes)
-  trigger_delay: 10 # seconds after sensor fires before fetching (gives detection time to end)
-  # trigger_sensors:              # optional: also trigger on HA sensor state changes
+  interval: 300     # seconds between runs (300 = every 5 minutes); a safety net, not the main path
+  followup_seconds: 600  # keep re-checking this long while a detection is pending
+  poll_fast_interval: 3  # seconds between checks for the first poll_fast_window seconds
+  poll_fast_window: 300  # keep the tight cadence well past typical event length
+  poll_slow_interval: 5  # slower cadence for the long tail
+  # timing_log: /homeassistant/appdaemon/unifi_events_timings.csv  # optional, for tuning
+  # trigger_sensors:  # optional but recommended: a detection starting shows a placeholder
+  #                   # immediately, and a detection ending fetches the thumbnail.
+  #                   # Entity IDs must match exactly - the app warns at startup if one
+  #                   # is unknown to HA (a wrong id binds silently and never fires).
   #   - binary_sensor.cam_person_detected
   #   - binary_sensor.cam_animal_detected
 

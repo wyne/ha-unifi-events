@@ -129,6 +129,24 @@ refresh_interval: 300
 
 ---
 
+## How updates reach the card
+
+A detection goes through three stages, so something useful is on screen almost immediately:
+
+1. **Icon (~1s)** — a trigger sensor flips `on` and a typed placeholder is written to the feed straight away.
+2. **Live snapshot (~3s)** — while the event is still running, a forced camera snapshot stands in. Protect's own
+   event thumbnail is not usable here: during an event it returns the camera's last cached frame, which can be a
+   minute stale and show an empty scene.
+3. **Final crop (~15s after the event ends)** — Protect only generates the real, object-centred thumbnail once the
+   event is over. `thumbnails/<id>` returns 404 until then, which is exactly the readiness signal the app polls for.
+
+While anything is unresolved the app re-checks every `poll_fast_interval` seconds instead of waiting for the next
+scheduled run. Waiting on the trigger sensor to clear is not good enough: those sensors track motion, not the
+Protect event, and can stay `on` for minutes after the thumbnail already exists. Each stage writes a different
+filename, because `/local` is served with a month-long cache header and reusing a URL would pin the older image.
+
+---
+
 ## Configuration reference (apps.yaml)
 
 | Key                    | Default                           | Description                                                                                                   |
@@ -142,12 +160,18 @@ refresh_interval: 300
 | `count`                | none (all)                        | Max thumbnails to include in the event feed                                                                   |
 | `types`                | all                               | List of: `person`, `animal`, `vehicle`, `package`                                                             |
 | `interval`             | `300`                             | Seconds between scheduled runs                                                                                |
-| `trigger_delay`        | `120`                             | Seconds after sensor fires before fetching; gives UniFi Protect time to finalize the event and thumbnail     |
-| `trigger_poll_interval`| `5`                               | Seconds between fast polls after a sensor trigger                                                             |
-| `trigger_poll_count`   | `12`                              | Max fast polls before giving up (12 × 5s = 60s window)                                                       |
+| `followup_seconds`     | `600`                             | How long to keep re-checking while a detection is pending. Covers the gap between Protect finishing an event and the HA motion sensor dropping |
+| `poll_fast_interval`   | `3`                               | Seconds between checks while a pending detection is younger than `poll_fast_window`                          |
+| `poll_fast_window`     | `300`                             | How long the fast cadence lasts before dropping to `poll_slow_interval`                                      |
+| `poll_slow_interval`   | `5`                               | Seconds between checks for the long tail                                                                     |
+| `timing_log`           | none                              | Optional CSV path; one row per saved thumbnail with start/end/download deltas, for tuning the cadence         |
+| `pending_ttl`          | `600`                             | How long a placeholder from a sensor trigger survives without a matching Protect event                        |
+| `pending_match_window` | `180`                             | How far apart a placeholder and a Protect event can be and still be treated as the same detection             |
+| `cleanup`              | `true`                            | Delete thumbnails that drop out of the feed                                                                   |
+| `cleanup_grace`        | `600`                             | Seconds before an unreferenced thumbnail is deleted, so a card one feed behind never 404s                    |
 | `output_dir`           | `/homeassistant/www/unifi_events` | Where to write thumbnails and the event feed                                                                  |
 | `web_root`             | `/local/unifi_events`             | URL prefix for thumbnail paths in the event feed                                                              |
-| `trigger_sensors`      | `[]`                              | List of HA binary sensor entity IDs that trigger an immediate fetch (e.g. UniFi motion/smart detect sensors) |
+| `trigger_sensors`      | `[]`                              | HA binary sensors that mark a detection. Going `on` shows a placeholder at once; going `off` fetches the thumbnail. Entity IDs must match exactly — the app logs a warning at startup for any it can't find |
 
 ---
 
@@ -180,8 +204,10 @@ python3 recent_detections.py --count 6
 | `--count 6`             | none (all)            | Max thumbnails to include in the event feed          |
 | `--web-root /local/...` | `/local/unifi_events` | URL prefix for thumbnail paths written to the JSON   |
 | `--types person animal` | all                   | Restrict to specific detection types                 |
+| `--timing-log PATH`     | off                   | Append one CSV row per saved thumbnail, for tuning   |
 
-Thumbnails are cached in `./output/` and the event feed is written to `./output/recent.json`.
+Thumbnails are cached in `apps/recent_detections/output/` and the event feed is written to
+`apps/recent_detections/output/recent.json` (both relative to where you run the script).
 Re-runs skip thumbnails that are already saved.
 
 **4. Preview in browser**
