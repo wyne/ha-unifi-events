@@ -386,8 +386,18 @@ async def _get_jpeg(client, path, log):
     return data if data and data[:2] == JPEG_MAGIC else None
 
 
+def _crop_id(event, primary):
+    """The id of Protect's object-centred crop for this event, or None until it exists.
+    Protect lists a crop per tracked object once it has generated them; the first of the
+    event's main type is the one the Protect app uses as the event thumbnail."""
+    crops = [t for t in ((event.metadata.detected_thumbnails if event.metadata else None) or [])
+             if t.cropped_id]
+    match = next((t for t in crops if t.type == primary), crops[0] if crops else None)
+    return match.cropped_id if match else None
+
+
 async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log,
-                 timing_log=None, watched_ids=()):
+                 timing_log=None, watched_ids=(), frame_grace=60):
     """Fetches recent smart detections and downloads any thumbnail we don't have yet.
 
     Returns the feed, newest first. Events still in progress, and ended events whose
@@ -436,18 +446,20 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
         stamp       = event.start.astimezone().strftime('%Y%m%d_%H%M%S')
         final_name  = f"{stamp}_{camera_name}_{primary}.jpg"
         prelim_name = f"{stamp}_{camera_name}_{primary}_live.jpg"
+        frame_name  = f"{stamp}_{camera_name}_{primary}_frame.jpg"
         final_path  = output_dir / final_name
         prelim_path = output_dir / prelim_name
+        frame_path  = output_dir / frame_name
 
         if final_path.exists() and final_path.stat().st_size > 0:
             entries.append({**entry, "url": f"{web_root}/{final_name}"})
             continue
 
-        # `thumbnails/<id>` only answers once Protect has generated the final image, so
-        # its 404 doubles as a "not ready yet" signal. The events list is no help here:
-        # it can still report the event as running ~20s after it actually ended.
-        final = await _get_jpeg(client, f"thumbnails/{event.thumbnail_id}", log) \
-            if event.thumbnail_id else None
+        # Only the object crop counts as final. The event's own `thumbnails/<id>` can't
+        # be trusted to mean that: after the event ends it briefly serves a frame of the
+        # (usually empty) scene, sometimes already cut square, before the crop replaces it.
+        crop_id = _crop_id(event, primary)
+        final = await _get_jpeg(client, f"thumbnails/{crop_id}", log) if crop_id else None
         if final:
             await _write_bytes(final_path, final)
             got_at = _now()
@@ -456,6 +468,24 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
             _append_timing(timing_log, event, camera_name, primary, got_at,
                            event.id in watched_ids)
             entries.append({**entry, "url": f"{web_root}/{final_name}"})
+            continue
+
+        # Some events may never get a crop. Once the event has been over long enough,
+        # settle for Protect's event thumbnail, under its own filename so a crop that
+        # turns up later can still replace it without fighting the browser cache.
+        ended_for  = (now - event.end).total_seconds() if event.end else None
+        have_frame = frame_path.exists() and frame_path.stat().st_size > 0
+        if not have_frame and event.thumbnail_id and ended_for is not None and ended_for >= frame_grace:
+            thumb = await _get_jpeg(client, f"thumbnails/{event.thumbnail_id}", log)
+            if thumb:
+                await _write_bytes(frame_path, thumb)
+                have_frame = True
+                log(f"    -> {frame_path} ({len(thumb)/1024:.1f} KB, no crop {ended_for:.0f}s "
+                    f"after it ended, using the event thumbnail)")
+                _append_timing(timing_log, event, camera_name, primary, _now(),
+                               event.id in watched_ids, kind="frame")
+        if have_frame:
+            entries.append({**entry, "url": f"{web_root}/{frame_name}"})
             continue
 
         # No final yet. While the event is still running, grab one forced live snapshot

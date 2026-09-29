@@ -138,7 +138,10 @@ A detection goes through three stages, so something useful is on screen almost i
    event thumbnail is not usable here: during an event it returns the camera's last cached frame, which can be a
    minute stale and show an empty scene.
 3. **Final crop (~15s after the event ends)** — Protect only generates the real, object-centred thumbnail once the
-   event is over. `thumbnails/<id>` returns 404 until then, which is exactly the readiness signal the app polls for.
+   event is over. The event's own thumbnail can't be used as the signal: for a few seconds after the event ends it
+   serves a frame of the (usually empty) scene before the crop replaces it. Instead the app waits for Protect to list
+   the crop in the event's `detectedThumbnails` and downloads that crop directly. If no crop appears within a minute
+   of the event ending, it falls back to the event thumbnail.
 
 While anything is unresolved the app re-checks every `poll_fast_interval` seconds instead of waiting for the next
 scheduled run. Waiting on the trigger sensor to clear is not good enough: those sensors track motion, not the
