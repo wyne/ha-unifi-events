@@ -20,6 +20,7 @@ from pathlib import Path
 
 import aiofiles
 from uiprotect import ProtectApiClient
+from uiprotect.data import Event
 from uiprotect.data.types import SmartDetectObjectType, EventType
 
 TYPE_MAP = {
@@ -415,7 +416,12 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
     if count:
         query["limit"] = max(count * 3, count + 10)
 
-    events = await client.get_events(start=since, end=now, sorting="desc", **query)
+    # uiprotect removed `get_events` in later releases; `get_events_raw` exists in every
+    # version, so parse its dicts ourselves. Like the old helper, skip anything that isn't
+    # a smart detection before parsing, so one unknown event type can't fail the fetch.
+    raw = await client.get_events_raw(start=since, end=now, sorting="desc", **query)
+    events = [Event.from_unifi_dict(api=client, **e) for e in raw
+              if e.get("type") == EventType.SMART_DETECT.value]
 
     detections = [
         e for e in events
