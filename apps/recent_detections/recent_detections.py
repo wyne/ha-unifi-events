@@ -11,6 +11,7 @@ Can run in two modes:
 
 import argparse
 import asyncio
+import copy
 import json
 import os
 import time
@@ -387,14 +388,17 @@ async def _get_jpeg(client, path, log):
     return data if data and data[:2] == JPEG_MAGIC else None
 
 
-def _crop_id(event, primary):
+def _crop_id(raw_event, primary):
     """The id of Protect's object-centred crop for this event, or None until it exists.
     Protect lists a crop per tracked object once it has generated them; the first of the
-    event's main type is the one the Protect app uses as the event thumbnail."""
-    crops = [t for t in ((event.metadata.detected_thumbnails if event.metadata else None) or [])
-             if t.cropped_id]
-    match = next((t for t in crops if t.type == primary), crops[0] if crops else None)
-    return match.cropped_id if match else None
+    event's main type is the one the Protect app uses as the event thumbnail.
+
+    Reads Protect's raw dict, not uiprotect's model: uiprotect 25 dropped `cropped_id`
+    from EventDetectedThumbnail even though Protect still sends `croppedId`."""
+    thumbs = (raw_event.get("metadata") or {}).get("detectedThumbnails") or []
+    crops = [t for t in thumbs if t.get("croppedId")]
+    match = next((t for t in crops if t.get("type") == primary), crops[0] if crops else None)
+    return match["croppedId"] if match else None
 
 
 async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log,
@@ -420,8 +424,10 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
     # version, so parse its dicts ourselves. Like the old helper, skip anything that isn't
     # a smart detection before parsing, so one unknown event type can't fail the fetch.
     raw = await client.get_events_raw(start=since, end=now, sorting="desc", **query)
-    events = [Event.from_unifi_dict(api=client, **e) for e in raw
-              if e.get("type") == EventType.SMART_DETECT.value]
+    # Keep the raw dicts too, for fields newer uiprotect no longer models. Parse copies,
+    # because parsing rewrites the nested dicts in place.
+    raw_by_id = {e["id"]: e for e in raw if e.get("type") == EventType.SMART_DETECT.value}
+    events = [Event.from_unifi_dict(api=client, **copy.deepcopy(e)) for e in raw_by_id.values()]
 
     detections = [
         e for e in events
@@ -464,7 +470,8 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
         # Only the object crop counts as final. The event's own `thumbnails/<id>` can't
         # be trusted to mean that: after the event ends it briefly serves a frame of the
         # (usually empty) scene, sometimes already cut square, before the crop replaces it.
-        crop_id = _crop_id(event, primary)
+        raw_event = raw_by_id.get(event.id, {})
+        crop_id = _crop_id(raw_event, primary)
         final = await _get_jpeg(client, f"thumbnails/{crop_id}", log) if crop_id else None
         if final:
             await _write_bytes(final_path, final)
@@ -481,8 +488,10 @@ async def _fetch(*, client, hours, watch_types, count, output_dir, web_root, log
         # turns up later can still replace it without fighting the browser cache.
         ended_for  = (now - event.end).total_seconds() if event.end else None
         have_frame = frame_path.exists() and frame_path.stat().st_size > 0
-        if not have_frame and event.thumbnail_id and ended_for is not None and ended_for >= frame_grace:
-            thumb = await _get_jpeg(client, f"thumbnails/{event.thumbnail_id}", log)
+        # Raw dict again: uiprotect 25 dropped Event.thumbnail_id.
+        thumb_id   = raw_event.get("thumbnail")
+        if not have_frame and thumb_id and ended_for is not None and ended_for >= frame_grace:
+            thumb = await _get_jpeg(client, f"thumbnails/{thumb_id}", log)
             if thumb:
                 await _write_bytes(frame_path, thumb)
                 have_frame = True
