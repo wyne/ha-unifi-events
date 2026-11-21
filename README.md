@@ -48,9 +48,14 @@ Go to **Settings → Add-ons → AppDaemon → Configuration** and add:
 
 ```yaml
 python_packages:
-  - uiprotect
+  - uiprotect==25.0.0
   - aiofiles
 ```
+
+Pin `uiprotect`. The add-on reinstalls packages on every restart, and new uiprotect releases
+have twice removed things this app used (`get_events` in 23.x, `cropped_id`/`thumbnail_id`
+in 25.x), leaving the card with only placeholder icons. Bump the pin deliberately, and check
+the AppDaemon log for `Fetch failed` after you do.
 
 ### Step 3 — Install this app via HACS
 
